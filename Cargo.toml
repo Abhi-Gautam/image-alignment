@@ -21,6 +21,12 @@ serde_json = "1.0"
 instant = "0.1"
 rand = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
+# Dashboard web server dependencies
+axum = "0.7"
+tokio = { version = "1.0", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+mime_guess = "2.0"
 
 [[bin]]
 name = "align"

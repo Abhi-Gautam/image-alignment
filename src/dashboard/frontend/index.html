@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔬 SEM Image Alignment Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            color: #2d3748;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .stats-bar {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .stat-item {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        /* Filters */
+        .filters {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .filters h3 {
+            margin-bottom: 15px;
+            color: #2d3748;
+        }
+
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .filter-group label {
+            font-weight: 600;
+            color: #4a5568;
+            font-size: 0.9rem;
+        }
+
+        select, input[type="checkbox"] {
+            padding: 8px 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            background: white;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Test Sessions - single items per row */
+        .test-sessions {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .session-card {
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: all 0.2s;
+            cursor: pointer;
+            background: white;
+            width: 100%;
+        }
+
+        .session-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.1);
+        }
+
+        .session-card.active {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .session-title {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+
+        .session-info {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .session-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 0.85rem;
+        }
+
+        /* Main Content Split Layout */
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+            height: 600px;
+            max-height: 600px;
+            overflow: hidden;
+        }
+
+        /* Test Cases Panel - Left Half */
+        .test-details {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            max-height: 100%;
+            overflow: hidden;
+        }
+
+        .test-details h3 {
+            margin: 0 0 15px 0;
+            flex-shrink: 0;
+        }
+
+        .test-cases-container {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 10px;
+            min-height: 0;
+        }
+
+        .test-cases-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .test-cases-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .test-cases-container::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+
+        .test-cases-container::-webkit-scrollbar-thumb:hover {
+            background: #5a67d8;
+        }
+
+        .test-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .test-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            transition: all 0.2s;
+            cursor: pointer;
+            background: white;
+            flex-shrink: 0;
+        }
+
+        .test-item:hover {
+            border-color: #667eea;
+            transform: scale(1.02);
+        }
+
+        .test-item.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .test-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 5px;
+        }
+
+        .test-status {
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+        }
+
+        .test-metrics {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+
+        /* Image Results Panel - Right Half */
+        .image-results {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            max-height: 100%;
+            overflow: hidden;
+        }
+
+        .image-results h3 {
+            margin: 0 0 15px 0;
+            color: #2d3748;
+            flex-shrink: 0;
+        }
+
+        .image-results-container {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-height: 0;
+        }
+
+        .image-results-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .image-results-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .image-results-container::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+
+        .image-container {
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .image-container h4 {
+            margin-bottom: 10px;
+            color: #2d3748;
+            font-size: 0.9rem;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            max-height: 150px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+
+        .image-container img:hover {
+            transform: scale(1.05);
+            cursor: zoom-in;
+        }
+
+        /* Image Display */
+        .image-display {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .image-container {
+            text-align: center;
+        }
+
+        .image-container h4 {
+            margin-bottom: 10px;
+            color: #2d3748;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+
+        .image-container img:hover {
+            transform: scale(1.05);
+            cursor: zoom-in;
+        }
+
+        /* Performance Summary */
+        .performance-summary {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            max-height: 500px; 
+        }
+
+        .performance-summary::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .performance-summary::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .performance-summary::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+
+        .performance-summary::-webkit-scrollbar-thumb:hover {
+            background: #5a67d8;
+        }
+
+        .performance-summary h3 {
+            position: sticky;
+            top: 0;
+            background: rgba(255, 255, 255, 0.95);
+            padding-bottom: 10px;
+            z-index: 1;
+        }
+
+        .algorithm-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .algorithm-card {
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 15px;
+            background: white;
+            transition: all 0.2s;
+        }
+
+        .algorithm-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.1);
+        }
+
+        .algorithm-name {
+            font-weight: bold;
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+            color: #2d3748;
+        }
+
+        .algorithm-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.9rem;
+        }
+
+        .success-bar {
+            width: 100%;
+            height: 20px;
+            background: #e2e8f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .success-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #48bb78, #38a169);
+            transition: width 0.5s ease;
+        }
+
+        /* Loading and Error States */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                height: auto;
+                max-height: none;
+            }
+            
+            .test-details, .image-results {
+                height: 400px;
+                max-height: 400px;
+            }
+            
+            .performance-summary {
+                max-height: 400px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .filter-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .stats-bar {
+                flex-direction: column;
+            }
+            
+            .algorithm-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .main-content {
+                height: auto;
+                max-height: none;
+            }
+            
+            .test-details, .image-results {
+                height: 300px;
+                max-height: 300px;
+            }
+            
+            .performance-summary {
+                max-height: 300px;
+            }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Utility Classes */
+        .success {
+            color: #38a169;
+        }
+
+        .failed {
+            color: #e53e3e;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .mb-20 {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔬 SEM Image Alignment Dashboard</h1>
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <span class="stat-value" id="totalTests">-</span>
+                    <span class="stat-label">Total Tests</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="successRate">-</span>
+                    <span class="stat-label">Success Rate</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="avgTime">-</span>
+                    <span class="stat-label">Avg Time (ms)</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="testSessions">-</span>
+                    <span class="stat-label">Test Sessions</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <h3>🔍 Filter Results</h3>
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label>Algorithm</label>
+                    <select id="algorithmFilter">
+                        <option value="">All Algorithms</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Patch Size</label>
+                    <select id="patchSizeFilter">
+                        <option value="">All Sizes</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Transformation</label>
+                    <select id="transformationFilter">
+                        <option value="">All Transformations</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="successOnlyFilter">
+                        <label for="successOnlyFilter">Success Only</label>
+                    </div>
+                </div>
+                <div class="filter-group">
+                    <button onclick="refreshData()" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 8px; cursor: pointer;">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Test Sessions -->
+        <div class="test-sessions">
+            <h3>📊 Test Sessions</h3>
+            <div id="sessionsList" class="loading">Loading test sessions...</div>
+        </div>
+
+        <!-- Main Content Split -->
+        <div class="main-content">
+            <!-- Test Cases - Left Half -->
+            <div class="test-details">
+                <h3>🧪 Test Cases</h3>
+                <div class="test-cases-container">
+                    <div id="testCasesList" class="loading">Select a test session to view details</div>
+                </div>
+            </div>
+
+            <!-- Image Results - Right Half -->
+            <div class="image-results">
+                <h3>🖼️ Visual Results</h3>
+                <div class="image-results-container" id="imageResults">
+                    <div class="text-center" style="color: #718096; padding: 40px;">
+                        Select a test case to view visual results
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Summary -->
+        <div class="performance-summary">
+            <h3>📈 Algorithm Performance Summary</h3>
+            <div id="algorithmSummary" class="loading">Loading performance data...</div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let dashboardData = null;
+        let selectedSession = null;
+        let selectedTest = null;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboardData();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Filter change handlers
+            document.getElementById('algorithmFilter').addEventListener('change', applyFilters);
+            document.getElementById('patchSizeFilter').addEventListener('change', applyFilters);
+            document.getElementById('transformationFilter').addEventListener('change', applyFilters);
+            document.getElementById('successOnlyFilter').addEventListener('change', applyFilters);
+        }
+
+        async function loadDashboardData() {
+            try {
+                const response = await fetch('/api/data');
+                if (!response.ok) throw new Error('Failed to fetch data');
+                
+                dashboardData = await response.json();
+                updateDashboard();
+                loadAlgorithmSummary();
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+                showError('Failed to load dashboard data');
+            }
+        }
+
+        async function loadAlgorithmSummary() {
+            try {
+                const response = await fetch('/api/algorithms/summary');
+                if (!response.ok) throw new Error('Failed to fetch algorithm summary');
+                
+                const summaries = await response.json();
+                renderAlgorithmSummary(summaries);
+            } catch (error) {
+                console.error('Error loading algorithm summary:', error);
+            }
+        }
+
+        function updateDashboard() {
+            if (!dashboardData) return;
+
+            // Update global stats
+            const totalTests = dashboardData.test_sessions.reduce((sum, session) => sum + session.total_tests, 0);
+            const totalSuccessful = dashboardData.test_sessions.reduce((sum, session) => 
+                sum + session.test_results.filter(t => t.performance_metrics.success).length, 0);
+            const avgSuccessRate = totalTests > 0 ? (totalSuccessful / totalTests * 100) : 0;
+            const avgTime = dashboardData.test_sessions.reduce((sum, session) => sum + session.avg_processing_time, 0) / 
+                            (dashboardData.test_sessions.length || 1);
+
+            document.getElementById('totalTests').textContent = totalTests.toLocaleString();
+            document.getElementById('successRate').textContent = avgSuccessRate.toFixed(1) + '%';
+            document.getElementById('avgTime').textContent = avgTime.toFixed(1);
+            document.getElementById('testSessions').textContent = dashboardData.test_sessions.length;
+
+            // Populate filter options
+            populateFilterOptions();
+            
+            // Render sessions
+            renderTestSessions();
+        }
+
+        function populateFilterOptions() {
+            const algorithmSelect = document.getElementById('algorithmFilter');
+            const patchSizeSelect = document.getElementById('patchSizeFilter');
+            const transformationSelect = document.getElementById('transformationFilter');
+
+            // Clear existing options
+            algorithmSelect.innerHTML = '<option value="">All Algorithms</option>';
+            patchSizeSelect.innerHTML = '<option value="">All Sizes</option>';
+            transformationSelect.innerHTML = '<option value="">All Transformations</option>';
+
+            // Add options from data
+            dashboardData.algorithms.forEach(algorithm => {
+                const option = document.createElement('option');
+                option.value = algorithm;
+                option.textContent = algorithm;
+                algorithmSelect.appendChild(option);
+            });
+
+            dashboardData.patch_sizes.forEach(size => {
+                const option = document.createElement('option');
+                option.value = size;
+                option.textContent = size;
+                patchSizeSelect.appendChild(option);
+            });
+
+            dashboardData.transformations.forEach(transformation => {
+                const option = document.createElement('option');
+                option.value = transformation;
+                option.textContent = transformation.replace('_', ' ');
+                transformationSelect.appendChild(option);
+            });
+        }
+
+        function renderTestSessions() {
+            const sessionsList = document.getElementById('sessionsList');
+            
+            if (!dashboardData.test_sessions.length) {
+                sessionsList.innerHTML = '<div class="text-center">No test sessions found</div>';
+                return;
+            }
+
+            sessionsList.innerHTML = dashboardData.test_sessions.map(session => `
+                <div class="session-card ${selectedSession?.id === session.id ? 'active' : ''}" 
+                     onclick="selectSession('${session.id}')">
+                    <div class="session-title">${session.name}</div>
+                    <div class="session-info">
+                        Created: ${new Date(session.created_at).toLocaleDateString()}<br>
+                        SEM Image: ${session.sem_image_path.split('/').pop()}
+                    </div>
+                    <div class="session-stats">
+                        <span>Tests: ${session.total_tests}</span>
+                        <span class="${session.success_rate > 70 ? 'success' : 'failed'}">
+                            Success: ${session.success_rate.toFixed(1)}%
+                        </span>
+                        <span>Avg: ${session.avg_processing_time.toFixed(1)}ms</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectSession(sessionId) {
+            selectedSession = dashboardData.test_sessions.find(s => s.id === sessionId);
+            selectedTest = null;
+            renderTestSessions();
+            renderTestCases();
+            hideImageDisplay();
+        }
+
+        function renderTestCases() {
+            const testCasesList = document.getElementById('testCasesList');
+            
+            if (!selectedSession) {
+                testCasesList.innerHTML = '<div class="text-center">Select a test session to view details</div>';
+                return;
+            }
+
+            if (!selectedSession.test_results.length) {
+                testCasesList.innerHTML = '<div class="text-center">No test cases found in this session</div>';
+                return;
+            }
+
+            testCasesList.innerHTML = `
+                <div class="test-grid">
+                    ${selectedSession.test_results.map(test => `
+                        <div class="test-item ${selectedTest?.test_id === test.test_id ? 'selected' : ''}"
+                             onclick="selectTest('${test.test_id}')">
+                            <div class="test-name">${test.algorithm_name}</div>
+                            <div class="test-status ${test.performance_metrics.success ? 'success' : 'failed'}">
+                                ${test.performance_metrics.success ? '✅' : '❌'} 
+                                ${test.transformation_applied.noise_parameters}
+                            </div>
+                            <div class="test-metrics">
+                                ${test.patch_info.size[0]}x${test.patch_info.size[1]} | 
+                                ${test.performance_metrics.translation_error_px.toFixed(1)}px |
+                                ${test.performance_metrics.processing_time_ms.toFixed(1)}ms
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function selectTest(testId) {
+            selectedTest = selectedSession.test_results.find(t => t.test_id === testId);
+            renderTestCases();
+            showImageDisplay();
+        }
+
+        function showImageDisplay() {
+            if (!selectedTest) return;
+
+            const imageResults = document.getElementById('imageResults');
+            
+            // Create image content
+            const imageContent = `
+                <div class="image-container">
+                    <h4>SEM Image with Alignment Overlay</h4>
+                    <img src="/api/image/${selectedTest.visual_outputs.overlay_result_path}" alt="Alignment Overlay" onerror="this.style.display='none'">
+                </div>
+                <div class="image-container">
+                    <h4>Original Patch</h4>
+                    <img src="/api/image/${selectedTest.patch_info.patch_path}" alt="Original Patch" onerror="this.style.display='none'">
+                </div>
+                <div class="image-container">
+                    <h4>Transformed Patch</h4>
+                    <img src="/api/image/${selectedTest.transformation_applied.transformed_patch_path}" alt="Transformed Patch" onerror="this.style.display='none'">
+                </div>
+                <div style="padding: 15px; background: #f7fafc; border-radius: 8px; margin-top: 10px;">
+                    <h4 style="margin-bottom: 10px; color: #2d3748;">Performance Metrics</h4>
+                    <div style="font-size: 0.9rem; line-height: 1.4;">
+                        <div><strong>Algorithm:</strong> ${selectedTest.algorithm_name}</div>
+                        <div><strong>Translation Error:</strong> ${selectedTest.performance_metrics.translation_error_px.toFixed(2)}px</div>
+                        <div><strong>Rotation Error:</strong> ${selectedTest.performance_metrics.rotation_error_deg.toFixed(2)}°</div>
+                        <div><strong>Confidence:</strong> ${selectedTest.performance_metrics.confidence_score.toFixed(3)}</div>
+                        <div><strong>Processing Time:</strong> ${selectedTest.performance_metrics.processing_time_ms.toFixed(1)}ms</div>
+                        <div><strong>Status:</strong> <span class="${selectedTest.performance_metrics.success ? 'success' : 'failed'}">${selectedTest.performance_metrics.success ? '✅ Success' : '❌ Failed'}</span></div>
+                    </div>
+                </div>
+            `;
+            
+            imageResults.innerHTML = imageContent;
+        }
+
+        function hideImageDisplay() {
+            const imageResults = document.getElementById('imageResults');
+            imageResults.innerHTML = `
+                <div class="text-center" style="color: #718096; padding: 40px;">
+                    Select a test case to view visual results
+                </div>
+            `;
+        }
+
+        function renderAlgorithmSummary(summaries) {
+            const summaryContainer = document.getElementById('algorithmSummary');
+            
+            if (!summaries.length) {
+                summaryContainer.innerHTML = '<div class="text-center">No algorithm data available</div>';
+                return;
+            }
+
+            // Sort by success rate descending
+            summaries.sort((a, b) => b.success_rate - a.success_rate);
+
+            summaryContainer.innerHTML = `
+                <div class="algorithm-grid">
+                    ${summaries.map(summary => `
+                        <div class="algorithm-card">
+                            <div class="algorithm-name">${summary.name}</div>
+                            <div class="success-bar">
+                                <div class="success-fill" style="width: ${summary.success_rate}%"></div>
+                            </div>
+                            <div class="algorithm-stats">
+                                <div>Success Rate: <strong>${summary.success_rate.toFixed(1)}%</strong></div>
+                                <div>Total Tests: <strong>${summary.total_tests}</strong></div>
+                                <div>Avg Error: <strong>${summary.avg_translation_error.toFixed(1)}px</strong></div>
+                                <div>Avg Time: <strong>${summary.avg_processing_time.toFixed(1)}ms</strong></div>
+                                <div>Confidence: <strong>${summary.avg_confidence.toFixed(2)}</strong></div>
+                                <div>Successful: <strong>${summary.success_count}</strong></div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        async function applyFilters() {
+            const algorithm = document.getElementById('algorithmFilter').value;
+            const patchSize = document.getElementById('patchSizeFilter').value;
+            const transformation = document.getElementById('transformationFilter').value;
+            const successOnly = document.getElementById('successOnlyFilter').checked;
+
+            const params = new URLSearchParams();
+            if (algorithm) params.append('algorithm', algorithm);
+            if (patchSize) params.append('patch_size', patchSize);
+            if (transformation) params.append('transformation', transformation);
+            if (successOnly) params.append('success_only', 'true');
+
+            try {
+                const response = await fetch(`/api/data?${params}`);
+                if (!response.ok) throw new Error('Failed to fetch filtered data');
+                
+                dashboardData = await response.json();
+                selectedSession = null;
+                selectedTest = null;
+                updateDashboard();
+                hideImageDisplay();
+            } catch (error) {
+                console.error('Error applying filters:', error);
+                showError('Failed to apply filters');
+            }
+        }
+
+        async function refreshData() {
+            try {
+                const response = await fetch('/api/refresh');
+                if (!response.ok) throw new Error('Failed to refresh data');
+                
+                await loadDashboardData();
+                showSuccess('Data refreshed successfully!');
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+                showError('Failed to refresh data');
+            }
+        }
+
+        function showError(message) {
+            // Simple error display - could be enhanced with a toast system
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            document.body.insertBefore(errorDiv, document.body.firstChild);
+            
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        function showSuccess(message) {
+            // Simple success display
+            const successDiv = document.createElement('div');
+            successDiv.style.cssText = 'background: #c6f6d5; color: #22543d; padding: 15px; border-radius: 8px; margin: 20px 0; position: fixed; top: 20px; right: 20px; z-index: 1000;';
+            successDiv.textContent = message;
+            document.body.appendChild(successDiv);
+            
+            setTimeout(() => successDiv.remove(), 3000);
+        }
+
+        // Image zoom functionality
+        document.addEventListener('click', function(e) {
+            if (e.target.tagName === 'IMG' && e.target.closest('.image-container')) {
+                const img = e.target;
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                    background: rgba(0,0,0,0.9); display: flex; align-items: center;
+                    justify-content: center; z-index: 1000; cursor: zoom-out;
+                `;
+                
+                const modalImg = img.cloneNode();
+                modalImg.style.cssText = 'max-width: 90%; max-height: 90%; border-radius: 8px;';
+                
+                modal.appendChild(modalImg);
+                modal.addEventListener('click', () => modal.remove());
+                document.body.appendChild(modal);
+            }
+        });
+    </script>
+</body>
+</html>

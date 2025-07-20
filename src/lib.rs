@@ -2,6 +2,7 @@ pub mod algorithms;
 pub mod data;
 pub mod analysis;
 pub mod visualization;
+pub mod dashboard;
 
 pub use algorithms::*;
 pub use data::*;

@@ -100,9 +100,21 @@ enum Commands {
         #[arg(short, long, default_value = "results/visual_tests")]
         output: PathBuf,
     },
+
+    /// Launch web dashboard to visualize test results
+    Dashboard {
+        /// Directory containing test results
+        #[arg(short, long, default_value = "results")]
+        results_dir: PathBuf,
+
+        /// Port to serve dashboard on
+        #[arg(short, long, default_value = "3000")]
+        port: u16,
+    },
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Initialize logging
@@ -130,6 +142,9 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::VisualTest { sem_image, output } => {
             handle_visual_test(sem_image, output)?;
+        }
+        Commands::Dashboard { results_dir, port } => {
+            handle_dashboard(results_dir, port).await?;
         }
     }
 
@@ -405,6 +420,18 @@ fn handle_visual_test(sem_image_path: PathBuf, output_dir: PathBuf) -> anyhow::R
     
     Ok(())
 }
+
+async fn handle_dashboard(results_dir: PathBuf, port: u16) -> anyhow::Result<()> {
+    use image_alignment::dashboard::start_dashboard_server;
+    
+    println!("🚀 Starting SEM Image Alignment Dashboard...");
+    println!("📁 Results Directory: {}", results_dir.display());
+    println!("🌐 Port: {}", port);
+    println!();
+    
+    start_dashboard_server(results_dir, port).await
+}
+
 #[cfg(test)]
 mod tests {
     // No unit tests in main.rs - all tests are in tests/ directory
