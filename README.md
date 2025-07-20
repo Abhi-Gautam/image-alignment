@@ -1,30 +1,21 @@
-# Semiconductor Wafer Image Alignment System
+# Image Alignment System
 
-<p align="center">
-  <strong>Real-time unsupervised image alignment for semiconductor wafer inspection</strong>
-</p>
+Real-time unsupervised image alignment for semiconductor wafer inspection.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Rust-1.70+-orange" alt="Rust Version">
-  <img src="https://img.shields.io/badge/Performance-<50ms-green" alt="Performance">
-  <img src="https://img.shields.io/badge/Accuracy-Sub--pixel-blue" alt="Accuracy">
-  <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
-</p>
-
-## 🎯 Overview
+## Overview
 
 A high-performance Rust-based image alignment system designed for semiconductor wafer inspection. Aligns small template images (patches) to larger SEM images with sub-pixel accuracy and real-time performance (<50ms processing time).
 
 ### Key Features
 
-- **🚀 Real-time Performance**: Sub-50ms processing for critical inspection workflows
-- **🎯 Sub-pixel Accuracy**: Precise alignment for semiconductor quality control
-- **🔄 Multiple Algorithms**: ORB template matching and FFT-based phase correlation
-- **📊 Performance Analysis**: Built-in benchmarking and accuracy measurement
-- **🛠 Production Ready**: Comprehensive CLI with JSON output for integration
-- **🧪 Synthetic Data Generation**: Built-in test pattern generators
+- Real-time performance: Sub-50ms processing for critical inspection workflows
+- Sub-pixel accuracy: Precise alignment for semiconductor quality control
+- Multiple algorithms: ORB template matching and FFT-based phase correlation
+- Performance analysis: Built-in benchmarking and accuracy measurement
+- Production ready: Comprehensive CLI with JSON output for integration
+- Test validation: Comprehensive testing framework with real wafer data
 
-## 📋 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -43,13 +34,10 @@ cargo run --release -- --help
 ### Basic Usage
 
 ```bash
-# Generate test data
-cargo run --release -- generate --count 5 --size 64 --pattern grid --output datasets/test/
-
 # Run alignment
 cargo run --release -- align \
-  --template datasets/test/synthetic_000.png \
-  --target datasets/test/synthetic_001.png \
+  --template template.png \
+  --target target.png \
   --algorithm orb \
   --output results/alignment.json
 
@@ -59,9 +47,16 @@ cargo run --release -- compare \
   --target target.png \
   --algorithms orb,phase \
   --output results/comparison.json
+
+# Test with known transformations
+cargo run --release -- test \
+  --source wafer_image.jpg \
+  --patch-size 64 \
+  --count 3 \
+  --output results/validation
 ```
 
-## 🏗 Architecture
+## Architecture
 
 ### Supported Algorithms
 
@@ -82,15 +77,7 @@ Algorithm Performance (64x64 images, Release mode):
 └─────────────────────┴──────────────┴─────────────────────┴──────────────┘
 ```
 
-## 📖 Documentation
-
-- **[Usage Guide](USAGE_GUIDE.md)**: Comprehensive command reference and examples
-- **[Testing Plan](TESTING_PLAN.md)**: Validation strategy and test automation  
-- **[Image Sources](IMAGE_SOURCES.md)**: Where to get real SEM images and test data
-- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)**: Technical details and results
-- **[Product Requirements](PRD.md)**: Original system requirements and objectives
-
-## 🎮 Command Reference
+## Command Reference
 
 ### Core Commands
 
@@ -101,14 +88,14 @@ cargo run --release -- align -t template.png -T target.png -a orb
 # Algorithm comparison  
 cargo run --release -- compare -t template.png -T target.png -a orb,phase
 
-# Synthetic data generation
-cargo run --release -- generate --count 10 --size 64 --pattern grid --output test_data/
+# Accuracy testing with real data
+cargo run --release -- test -s wafer.jpg -p 64 -n 3 -o results/
 
 # Performance benchmarking
 cargo run --release -- benchmark --dataset validation/ --algorithms orb,phase --output benchmark.json
 ```
 
-## 📊 Output Format
+## Output Format
 
 ```json
 {
@@ -127,7 +114,7 @@ cargo run --release -- benchmark --dataset validation/ --algorithms orb,phase --
 - **Confidence**: Algorithm confidence (0.0-1.0)
 - **Processing Time**: Milliseconds
 
-## 🧪 Testing and Validation
+## Testing and Validation
 
 ### Test Coverage
 ```bash
@@ -155,7 +142,7 @@ test test_phase_correlation_alignment ... ok
 test result: ok. 7 passed; 0 failed
 ```
 
-## 🔧 Requirements
+## Requirements
 
 ### System Requirements
 - **Rust**: 1.70 or later
@@ -177,21 +164,21 @@ serde = "1.0"          # JSON serialization
 instant = "0.1"        # High-precision timing
 ```
 
-## 🎯 Use Cases
+## Use Cases
 
 ### Semiconductor Inspection
-- **Wafer alignment**: Align inspection templates to SEM images
-- **Defect detection**: Locate known defect patterns in wafer scans
-- **Quality control**: Automated alignment for measurement systems
-- **Process monitoring**: Track feature alignment over time
+- Wafer alignment: Align inspection templates to SEM images
+- Defect detection: Locate known defect patterns in wafer scans
+- Quality control: Automated alignment for measurement systems
+- Process monitoring: Track feature alignment over time
 
 ### General Applications
-- **Medical imaging**: Align tissue samples and reference images
-- **Materials science**: Compare crystal structures and patterns
-- **Computer vision**: Template matching for object detection
-- **Research**: Automated image analysis workflows
+- Medical imaging: Align tissue samples and reference images
+- Materials science: Compare crystal structures and patterns
+- Computer vision: Template matching for object detection
+- Research: Automated image analysis workflows
 
-## 🚀 Performance Optimization
+## Performance Optimization
 
 ### For Speed
 ```bash
@@ -216,7 +203,7 @@ cargo run --release -- align -t small_template.png -T large_target.png -a orb
 # Monitor memory usage with: ps aux | grep image-alignment
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -247,59 +234,54 @@ identify -ping *.png
 RUST_LOG=debug cargo run --release -- align -t template.png -T target.png -a orb
 ```
 
-## 📈 Project Status
+## Project Status
 
-### ✅ Implemented Features
+### Implemented Features
 - Core alignment algorithms (ORB, Phase Correlation)
 - CLI interface with all subcommands
-- Synthetic data generation (grid and dot patterns)
+- Patch extraction and transformation utilities
 - Performance measurement and comparison
 - JSON output format for integration
 - Comprehensive test suite (7 passing tests)
+- Validation testing with real wafer data
 
-### 🔄 In Progress
-- OpenCV integration (pending system dependencies)
-- Enhanced noise simulation
-- Benchmark command implementation
+### Known Limitations
+- ORB algorithm requires debugging for rotation detection
+- Phase correlation does not detect rotations
+- OpenCV integration disabled due to system dependencies
 
-### 📋 Planned Features
-- AKAZE feature matching for rotation invariance
-- GPU acceleration via CUDA
-- Web dashboard for visualization
+### Planned Features
+- Enhanced rotation detection algorithms
+- GPU acceleration for large datasets
+- Batch processing capabilities
 - Docker containerization
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
+2. Create a feature branch (`git checkout -b feature/new-feature`)
+3. Commit changes (`git commit -m 'Add new feature'`)
+4. Push to branch (`git push origin feature/new-feature`)
 5. Open a Pull Request
 
 ### Development Setup
 ```bash
 # Install development dependencies
-cargo install cargo-watch cargo-flamegraph
+cargo install cargo-watch
 
 # Run tests in watch mode
 cargo watch -x test
 
-# Profile performance
-cargo flamegraph --bin image-alignment -- align -t test.png -T test.png -a orb
+# Run with debug logging
+RUST_LOG=debug cargo run --release -- align -t template.png -T target.png
 ```
 
-## 📞 Support
+## Support
 
-- **Documentation**: See docs/ directory for detailed guides
-- **Issues**: Report bugs via GitHub Issues
-- **Discussions**: Use GitHub Discussions for questions
-
----
-
-<p align="center">
-  <strong>Built with ❤️ in Rust for high-performance semiconductor inspection</strong>
-</p>
+- Issues: Report bugs via GitHub Issues
+- Documentation: See inline code documentation
+- Questions: Use GitHub Discussions
