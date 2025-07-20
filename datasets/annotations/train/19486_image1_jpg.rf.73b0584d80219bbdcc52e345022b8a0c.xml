@@ -1,0 +1,47 @@
+<annotation>
+	<folder></folder>
+	<filename>19486_image1_jpg.rf.73b0584d80219bbdcc52e345022b8a0c.jpg</filename>
+	<path>19486_image1_jpg.rf.73b0584d80219bbdcc52e345022b8a0c.jpg</path>
+	<source>
+		<database>roboflow.com</database>
+	</source>
+	<size>
+		<width>742</width>
+		<height>576</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>BLOCK ETCH</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<occluded>0</occluded>
+		<bndbox>
+			<xmin>252</xmin>
+			<xmax>701</xmax>
+			<ymin>72</ymin>
+			<ymax>577</ymax>
+		</bndbox>
+		<polygon>
+			<x1>430.9</x1>
+			<y1>72.8</y1>
+			<x2>337.4</x2>
+			<y2>163.2</y2>
+			<x3>250.9</x3>
+			<y3>311.6</y3>
+			<x4>280.2</x4>
+			<y4>402.7</y4>
+			<x5>384.5</x5>
+			<y5>575.8</y5>
+			<x6>699.7</x6>
+			<y6>575.8</y6>
+			<x7>437.1</x7>
+			<y7>70.5</y7>
+			<x8>430.1</x8>
+			<y8>73.6</y8>
+			<x9>430.9</x9>
+			<y9>72.8</y9>
+		</polygon>
+	</object>
+</annotation>

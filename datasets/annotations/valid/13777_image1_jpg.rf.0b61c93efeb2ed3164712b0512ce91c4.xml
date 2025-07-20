@@ -1,0 +1,41 @@
+<annotation>
+	<folder></folder>
+	<filename>13777_image1_jpg.rf.0b61c93efeb2ed3164712b0512ce91c4.jpg</filename>
+	<path>13777_image1_jpg.rf.0b61c93efeb2ed3164712b0512ce91c4.jpg</path>
+	<source>
+		<database>roboflow.com</database>
+	</source>
+	<size>
+		<width>759</width>
+		<height>433</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>COATING BAD</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<occluded>0</occluded>
+		<bndbox>
+			<xmin>1</xmin>
+			<xmax>760</xmax>
+			<ymin>1</ymin>
+			<ymax>365</ymax>
+		</bndbox>
+		<polygon>
+			<x1>0</x1>
+			<y1>0</y1>
+			<x2>0</x2>
+			<y2>363.845953</y2>
+			<x3>759</x3>
+			<y3>149.6</y3>
+			<x4>758.2</x4>
+			<y4>149.6</y4>
+			<x5>758.2</x5>
+			<y5>0</y5>
+			<x6>0</x6>
+			<y6>0</y6>
+		</polygon>
+	</object>
+</annotation>

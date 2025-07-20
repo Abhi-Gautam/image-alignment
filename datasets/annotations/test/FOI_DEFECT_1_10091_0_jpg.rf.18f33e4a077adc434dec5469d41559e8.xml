@@ -1,0 +1,45 @@
+<annotation>
+	<folder></folder>
+	<filename>FOI_DEFECT_1_10091_0_jpg.rf.18f33e4a077adc434dec5469d41559e8.jpg</filename>
+	<path>FOI_DEFECT_1_10091_0_jpg.rf.18f33e4a077adc434dec5469d41559e8.jpg</path>
+	<source>
+		<database>roboflow.com</database>
+	</source>
+	<size>
+		<width>2048</width>
+		<height>1536</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>SEZ BURNT</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<occluded>0</occluded>
+		<bndbox>
+			<xmin>110</xmin>
+			<xmax>2049</xmax>
+			<ymin>651</ymin>
+			<ymax>1321</ymax>
+		</bndbox>
+		<polygon>
+			<x1>2045.6</x1>
+			<y1>649.9</y1>
+			<x2>478.7</x2>
+			<y2>658.4</y2>
+			<x3>472.3</x3>
+			<y3>915.6</y3>
+			<x4>110.9</x4>
+			<y4>928.4</y4>
+			<x5>108.7</x5>
+			<y5>1319.6</y5>
+			<x6>2047.7</x6>
+			<y6>1296.2</y6>
+			<x7>2047.7</x7>
+			<y7>649.9</y7>
+			<x8>2045.6</x8>
+			<y8>649.9</y8>
+		</polygon>
+	</object>
+</annotation>

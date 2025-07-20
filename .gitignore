@@ -1,0 +1,59 @@
+# Rust specific
+/target/
+Cargo.lock
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Documentation (except README)
+*.md
+!README.md
+
+# Test results and validation data
+/results/
+/output/
+/tmp/
+/temp/
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Coverage reports
+tarpaulin-report.html
+cobertura.xml
+lcov.info

@@ -1,0 +1,47 @@
+<annotation>
+	<folder></folder>
+	<filename>3297_image1_jpg.rf.89d8d7aeb5889a275b4c75c3f6d63b26.jpg</filename>
+	<path>3297_image1_jpg.rf.89d8d7aeb5889a275b4c75c3f6d63b26.jpg</path>
+	<source>
+		<database>roboflow.com</database>
+	</source>
+	<size>
+		<width>742</width>
+		<height>576</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>PIQ PARTICLE</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<occluded>0</occluded>
+		<bndbox>
+			<xmin>372</xmin>
+			<xmax>392</xmax>
+			<ymin>336</ymin>
+			<ymax>356</ymax>
+		</bndbox>
+		<polygon>
+			<x1>373.7</x1>
+			<y1>352.5</y1>
+			<x2>380.8</x2>
+			<y2>355.4</y2>
+			<x3>387.8</x3>
+			<y3>352.5</y3>
+			<x4>390.8</x4>
+			<y4>345.4</y4>
+			<x5>387.8</x5>
+			<y5>338.4</y5>
+			<x6>380.8</x6>
+			<y6>335.4</y6>
+			<x7>373.7</x7>
+			<y7>338.4</y7>
+			<x8>370.8</x8>
+			<y8>345.4</y8>
+			<x9>373.7</x9>
+			<y9>352.5</y9>
+		</polygon>
+	</object>
+</annotation>

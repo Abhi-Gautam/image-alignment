@@ -1,0 +1,45 @@
+<annotation>
+	<folder></folder>
+	<filename>11472_image1_jpg.rf.57483dabcf0db2a1dfeced029f453431.jpg</filename>
+	<path>11472_image1_jpg.rf.57483dabcf0db2a1dfeced029f453431.jpg</path>
+	<source>
+		<database>roboflow.com</database>
+	</source>
+	<size>
+		<width>640</width>
+		<height>480</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>SEZ BURNT</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<occluded>0</occluded>
+		<bndbox>
+			<xmin>49</xmin>
+			<xmax>472</xmax>
+			<ymin>73</ymin>
+			<ymax>435</ymax>
+		</bndbox>
+		<polygon>
+			<x1>49.1</x1>
+			<y1>72</y1>
+			<x2>47.6</x2>
+			<y2>373.1</y2>
+			<x3>148.5</x3>
+			<y3>373.9</y3>
+			<x4>147.7</x4>
+			<y4>433.6</y4>
+			<x5>462.8</x5>
+			<y5>431.3</y5>
+			<x6>471.3</x6>
+			<y6>79</y6>
+			<x7>49.9</x7>
+			<y7>72.7</y7>
+			<x8>49.1</x8>
+			<y8>72</y8>
+		</polygon>
+	</object>
+</annotation>
