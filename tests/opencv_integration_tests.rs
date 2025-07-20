@@ -42,14 +42,40 @@ fn test_simple_pattern_creation() {
 }
 
 #[test]
-fn test_orb_alignment() {
+fn test_opencv_template_ncc_alignment() {
     let template = create_test_pattern(32, 32);
     let target = create_test_pattern(32, 32);
     
-    let orb = algorithms::OrbMatcher;
+    let matcher = OpenCVTemplateMatcher::new_ncc();
+    let result = matcher.align(&template, &target).unwrap();
+    
+    assert_eq!(result.algorithm_used, "OpenCV-NCC");
+    assert!(result.processing_time_ms >= 0.0);
+    assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
+}
+
+#[test]
+fn test_opencv_template_ssd_alignment() {
+    let template = create_test_pattern(32, 32);
+    let target = create_test_pattern(32, 32);
+    
+    let matcher = OpenCVTemplateMatcher::new_ssd();
+    let result = matcher.align(&template, &target).unwrap();
+    
+    assert_eq!(result.algorithm_used, "OpenCV-SSD");
+    assert!(result.processing_time_ms >= 0.0);
+    assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
+}
+
+#[test]
+fn test_opencv_orb_alignment() {
+    let template = create_test_pattern(32, 32);
+    let target = create_test_pattern(32, 32);
+    
+    let orb = OpenCVORB::new();
     let result = orb.align(&template, &target).unwrap();
     
-    assert_eq!(result.algorithm_used, "ORB");
+    assert_eq!(result.algorithm_used, "OpenCV-ORB");
     assert!(result.processing_time_ms >= 0.0);
     assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
 }
@@ -59,7 +85,7 @@ fn test_phase_correlation_alignment() {
     let template = create_test_pattern(32, 32);
     let target = create_test_pattern(32, 32);
     
-    let phase = algorithms::PhaseCorrelation;
+    let phase = PhaseCorrelation;
     let result = phase.align(&template, &target).unwrap();
     
     assert_eq!(result.algorithm_used, "PhaseCorrelation");
@@ -94,11 +120,43 @@ fn test_benchmark_runner() {
     let target = create_test_pattern(16, 16);
     
     let mut runner = BenchmarkRunner::new();
-    runner.add_algorithm(Box::new(algorithms::OrbMatcher));
-    runner.add_algorithm(Box::new(algorithms::PhaseCorrelation));
+    runner.add_algorithm(Box::new(OpenCVTemplateMatcher::new_ncc()));
+    runner.add_algorithm(Box::new(OpenCVORB::new()));
+    runner.add_algorithm(Box::new(PhaseCorrelation));
     
     let results = runner.run_benchmark(&template, &target);
-    assert_eq!(results.len(), 2);
-    assert_eq!(results[0].algorithm_used, "ORB");
-    assert_eq!(results[1].algorithm_used, "PhaseCorrelation");
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0].algorithm_used, "OpenCV-NCC");
+    assert_eq!(results[1].algorithm_used, "OpenCV-ORB");
+    assert_eq!(results[2].algorithm_used, "PhaseCorrelation");
+}
+
+#[test]
+fn test_algorithm_comparison() {
+    let template = create_test_pattern(24, 24);
+    let target = create_test_pattern(24, 24);
+    
+    // Test multiple OpenCV algorithms
+    let algorithms: Vec<Box<dyn AlignmentAlgorithm>> = vec![
+        Box::new(OpenCVTemplateMatcher::new_ncc()),
+        Box::new(OpenCVTemplateMatcher::new_ssd()),
+        Box::new(OpenCVTemplateMatcher::new_ccorr()),
+        Box::new(OpenCVORB::new()),
+    ];
+    
+    for algorithm in algorithms {
+        let result = algorithm.align(&template, &target).unwrap();
+        
+        // All algorithms should run successfully
+        assert!(result.processing_time_ms >= 0.0);
+        assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
+        
+        // For identical images, translation should be near zero
+        assert!(result.translation.0.abs() < 5.0, 
+               "Algorithm {} translation X too large: {}", 
+               result.algorithm_used, result.translation.0);
+        assert!(result.translation.1.abs() < 5.0, 
+               "Algorithm {} translation Y too large: {}", 
+               result.algorithm_used, result.translation.1);
+    }
 }

@@ -27,7 +27,7 @@ enum Commands {
         #[arg(short = 'T', long)]
         target: PathBuf,
 
-        /// Algorithm to use for alignment
+        /// Algorithm to use for alignment (orb, ncc, ssd, ccorr, phase)
         #[arg(short, long, default_value = "orb")]
         algorithm: String,
 
@@ -47,7 +47,7 @@ enum Commands {
         target: PathBuf,
 
         /// Algorithms to compare (comma-separated)
-        #[arg(short, long, default_value = "orb,phase")]
+        #[arg(short, long, default_value = "orb,ncc,ssd,phase")]
         algorithms: String,
 
         /// Output file for comparison results
@@ -81,7 +81,7 @@ enum Commands {
         #[arg(short, long)]
         dataset: PathBuf,
 
-        /// Algorithms to benchmark
+        /// Algorithms to benchmark (orb, ncc, ssd, ccorr, phase, all)
         #[arg(short, long, default_value = "all")]
         algorithms: String,
 
@@ -166,8 +166,24 @@ fn handle_align(template_path: PathBuf, target_path: PathBuf, algorithm: String,
     println!("Running alignment with {} algorithm...", algorithm);
     
     let result = match algorithm.as_str() {
-        "orb" => {
+        "orb" | "opencv-orb" => {
+            let aligner = algorithms::OpenCVORB::new();
+            aligner.align(&template, &target)?
+        }
+        "orb-legacy" => {
             let aligner = algorithms::OrbMatcher;
+            aligner.align(&template, &target)?
+        }
+        "ncc" | "opencv-ncc" => {
+            let aligner = algorithms::OpenCVTemplateMatcher::new_ncc();
+            aligner.align(&template, &target)?
+        }
+        "ssd" | "opencv-ssd" => {
+            let aligner = algorithms::OpenCVTemplateMatcher::new_ssd();
+            aligner.align(&template, &target)?
+        }
+        "ccorr" | "opencv-ccorr" => {
+            let aligner = algorithms::OpenCVTemplateMatcher::new_ccorr();
             aligner.align(&template, &target)?
         }
         "phase" => {
@@ -175,7 +191,7 @@ fn handle_align(template_path: PathBuf, target_path: PathBuf, algorithm: String,
             aligner.align(&template, &target)?
         }
         _ => {
-            return Err(anyhow::anyhow!("Unknown algorithm: {}", algorithm));
+            return Err(anyhow::anyhow!("Unknown algorithm: {}. Available: orb, ncc, ssd, ccorr, phase", algorithm));
         }
     };
 
@@ -206,8 +222,24 @@ fn handle_compare(template_path: PathBuf, target_path: PathBuf, algorithms: Stri
     for algo in algorithm_list {
         println!("Running {} algorithm...", algo);
         let result = match algo {
-            "orb" => {
+            "orb" | "opencv-orb" => {
+                let aligner = algorithms::OpenCVORB::new();
+                aligner.align(&template, &target)?
+            }
+            "orb-legacy" => {
                 let aligner = algorithms::OrbMatcher;
+                aligner.align(&template, &target)?
+            }
+            "ncc" | "opencv-ncc" => {
+                let aligner = algorithms::OpenCVTemplateMatcher::new_ncc();
+                aligner.align(&template, &target)?
+            }
+            "ssd" | "opencv-ssd" => {
+                let aligner = algorithms::OpenCVTemplateMatcher::new_ssd();
+                aligner.align(&template, &target)?
+            }
+            "ccorr" | "opencv-ccorr" => {
+                let aligner = algorithms::OpenCVTemplateMatcher::new_ccorr();
                 aligner.align(&template, &target)?
             }
             "phase" => {
@@ -215,7 +247,7 @@ fn handle_compare(template_path: PathBuf, target_path: PathBuf, algorithms: Stri
                 aligner.align(&template, &target)?
             }
             _ => {
-                log::warn!("Unknown algorithm: {}, skipping", algo);
+                log::warn!("Unknown algorithm: {}, skipping. Available: orb, ncc, ssd, ccorr, phase", algo);
                 continue;
             }
         };
@@ -300,13 +332,21 @@ fn handle_test(source_path: PathBuf, patch_size: u32, count: u32, output_dir: Pa
             let transformed_path = transformed_dir.join(&transformed_name);
             transformed.save(&transformed_path)?;
             
-            // Test both algorithms
-            for algorithm in &["orb", "phase"] {
+            // Test OpenCV algorithms
+            for algorithm in &["orb", "ncc", "ssd", "phase"] {
                 println!("    🎯 Testing {} algorithm...", algorithm);
                 
                 let result = match *algorithm {
                     "orb" => {
-                        let aligner = algorithms::OrbMatcher;
+                        let aligner = algorithms::OpenCVORB::new();
+                        aligner.align(patch, &transformed)?
+                    }
+                    "ncc" => {
+                        let aligner = algorithms::OpenCVTemplateMatcher::new_ncc();
+                        aligner.align(patch, &transformed)?
+                    }
+                    "ssd" => {
+                        let aligner = algorithms::OpenCVTemplateMatcher::new_ssd();
                         aligner.align(patch, &transformed)?
                     }
                     "phase" => {
