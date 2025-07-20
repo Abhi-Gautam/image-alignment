@@ -22,7 +22,7 @@ impl Default for ImprovedORB {
 impl ImprovedORB {
     pub fn new() -> Self {
         Self {
-            fast_threshold: 20,
+            fast_threshold: 8,   // Reduced from 20 to detect more corners
             max_keypoints: 500,
             patch_size: 31,
             pyramid_levels: 8,
@@ -333,7 +333,7 @@ impl ImprovedORB {
         corners.par_sort_by(|a, b| b.response.partial_cmp(&a.response).unwrap_or(Ordering::Equal));
         
         let mut selected = Vec::new();
-        let suppression_radius = 5.0;
+        let suppression_radius = 3.0;  // Reduced from 5.0 for less aggressive suppression
         let mut suppression_map = std::collections::HashSet::new();
         
         for corner in corners {
@@ -530,9 +530,9 @@ impl ImprovedORB {
                 }
                 
                 // Lowe's ratio test
-                if best_distance < 80 && 
+                if best_distance < 120 &&  // Increased from 80 to allow more matches 
                    second_best_distance > 0 && 
-                   (best_distance as f32 / second_best_distance as f32) < 0.7 {
+                   (best_distance as f32 / second_best_distance as f32) < 0.8 {  // Increased from 0.7
                     Some(ImprovedFeatureMatch {
                         template_idx,
                         target_idx: best_target_idx,
@@ -559,12 +559,25 @@ impl ImprovedORB {
         template_features: &[ImprovedFeature], 
         target_features: &[ImprovedFeature]
     ) -> Transformation {
-        if matches.len() < 3 {
+        if matches.is_empty() {
             return Transformation {
                 translation: (0.0, 0.0),
                 rotation: 0.0,
                 scale: 1.0,
                 confidence: 0.0,
+            };
+        }
+        
+        // If we have 1-2 matches, provide basic translation with low confidence
+        if matches.len() < 3 {
+            let template_kp = &template_features[matches[0].template_idx].keypoint;
+            let target_kp = &target_features[matches[0].target_idx].keypoint;
+            
+            return Transformation {
+                translation: (target_kp.x - template_kp.x, target_kp.y - template_kp.y),
+                rotation: 0.0,
+                scale: 1.0,
+                confidence: 0.2,  // Low but non-zero confidence
             };
         }
         

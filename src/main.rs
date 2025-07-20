@@ -89,6 +89,17 @@ enum Commands {
         #[arg(short, long, default_value = "results/benchmark.json")]
         output: PathBuf,
     },
+
+    /// Run comprehensive visual tests with detailed reports
+    VisualTest {
+        /// Path to SEM image for testing
+        #[arg(short, long)]
+        sem_image: PathBuf,
+
+        /// Output directory for visual test results
+        #[arg(short, long, default_value = "results/visual_tests")]
+        output: PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -116,6 +127,9 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Benchmark { dataset, algorithms, output } => {
             handle_benchmark(dataset, algorithms, output)?;
+        }
+        Commands::VisualTest { sem_image, output } => {
+            handle_visual_test(sem_image, output)?;
         }
     }
 
@@ -350,6 +364,45 @@ fn handle_test(source_path: PathBuf, patch_size: u32, count: u32, output_dir: Pa
 
 fn handle_benchmark(_dataset: PathBuf, _algorithms: String, _output: PathBuf) -> anyhow::Result<()> {
     println!("Benchmark functionality not yet implemented");
+    Ok(())
+}
+
+fn handle_visual_test(sem_image_path: PathBuf, output_dir: PathBuf) -> anyhow::Result<()> {
+    use image_alignment::visualization::VisualTester;
+    
+    println!("🔬 Starting comprehensive visual testing...");
+    println!("📁 SEM Image: {}", sem_image_path.display());
+    println!("📂 Output Directory: {}", output_dir.display());
+    
+    let mut tester = VisualTester::new(output_dir);
+    let reports = tester.run_comprehensive_test(&sem_image_path)?;
+    
+    println!("\n✅ Visual testing completed!");
+    println!("📊 Generated {} test reports", reports.len());
+    println!("📋 Summary report: SUMMARY_REPORT.md");
+    
+    // Print quick summary
+    let mut by_algorithm = std::collections::HashMap::new();
+    for report in &reports {
+        by_algorithm.entry(&report.algorithm_name).or_insert_with(Vec::new).push(report);
+    }
+    
+    println!("\n🎯 Quick Performance Summary:");
+    println!("┌─────────────────────┬─────────┬──────────────┬─────────────────────┐");
+    println!("│ Algorithm           │ Tests   │ Success Rate │ Avg Time (ms)       │");
+    println!("├─────────────────────┼─────────┼──────────────┼─────────────────────┤");
+    
+    for (algo_name, algo_reports) in by_algorithm {
+        let success_count = algo_reports.iter().filter(|r| r.performance_metrics.success).count();
+        let success_rate = success_count as f32 / algo_reports.len() as f32 * 100.0;
+        let avg_time: f32 = algo_reports.iter().map(|r| r.performance_metrics.processing_time_ms).sum::<f32>() / algo_reports.len() as f32;
+        
+        println!("│ {:<19} │ {:<7} │ {:<12.1}% │ {:<19.1} │", 
+                 algo_name, algo_reports.len(), success_rate, avg_time);
+    }
+    
+    println!("└─────────────────────┴─────────┴──────────────┴─────────────────────┘");
+    
     Ok(())
 }
 #[cfg(test)]
