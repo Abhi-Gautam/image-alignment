@@ -37,6 +37,9 @@ pids
 /tmp/
 /temp/
 
+# Datasets (too large for git)
+/datasets/
+
 # Backup files
 *.bak
 *.backup
