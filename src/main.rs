@@ -352,3 +352,7 @@ fn handle_benchmark(_dataset: PathBuf, _algorithms: String, _output: PathBuf) ->
     println!("Benchmark functionality not yet implemented");
     Ok(())
 }
+#[cfg(test)]
+mod tests {
+    // No unit tests in main.rs - all tests are in tests/ directory
+}

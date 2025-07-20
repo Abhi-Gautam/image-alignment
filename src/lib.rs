@@ -31,3 +31,8 @@ impl AlignmentResult {
 }
 
 pub type Result<T> = anyhow::Result<T>;
+
+#[cfg(test)]
+mod tests {
+    // No unit tests in lib.rs - all tests are in tests/ directory
+}
