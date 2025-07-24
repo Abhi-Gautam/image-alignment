@@ -1,8 +1,9 @@
+use crate::config::DashboardConfig;
+use crate::pipeline::AlignmentResult as PipelineAlignmentResult;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use crate::pipeline::{AlignmentResult as PipelineAlignmentResult};
 
 /// Dashboard data structures for organizing test results
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,8 +67,6 @@ pub struct VisualOutputs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceMetrics {
     pub translation_error_px: f32,
-    pub rotation_error_deg: f32,
-    pub scale_error_ratio: f32,
     pub processing_time_ms: f32,
     pub confidence_score: f32,
     pub success: bool,
@@ -80,7 +79,6 @@ pub struct AlgorithmSummary {
     pub success_count: usize,
     pub success_rate: f32,
     pub avg_translation_error: f32,
-    pub avg_rotation_error: f32,
     pub avg_processing_time: f32,
     pub avg_confidence: f32,
 }
@@ -89,11 +87,32 @@ pub struct AlgorithmSummary {
 #[derive(Clone)]
 pub struct DashboardDataLoader {
     pub results_dir: PathBuf,
+    pub config: DashboardConfig,
 }
 
 impl DashboardDataLoader {
     pub fn new(results_dir: PathBuf) -> Self {
-        Self { results_dir }
+        Self { 
+            results_dir,
+            config: DashboardConfig::default(),
+        }
+    }
+
+    pub fn with_config(results_dir: PathBuf, config: DashboardConfig) -> Self {
+        Self { 
+            results_dir,
+            config,
+        }
+    }
+
+    /// Helper function to safely calculate averages
+    fn safe_average(values: &[f32]) -> f32 {
+        if values.is_empty() { 0.0 } else { values.iter().sum::<f32>() / values.len() as f32 }
+    }
+
+    /// Helper function to calculate success rate
+    fn calculate_success_rate(total: usize, success_count: usize) -> f32 {
+        if total > 0 { success_count as f32 / total as f32 * 100.0 } else { 0.0 }
     }
 
     /// Load all test sessions from results directory
@@ -132,8 +151,13 @@ impl DashboardDataLoader {
             }
         }
 
-        // Sort sessions by creation time (newest first)
+        // Sort sessions by creation time (newest first) and limit if configured
         test_sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        
+        // Apply results per page limit if configured
+        if self.config.results_per_page > 0 && test_sessions.len() > self.config.results_per_page {
+            test_sessions.truncate(self.config.results_per_page);
+        }
 
         Ok(DashboardData {
             test_sessions,
@@ -169,20 +193,12 @@ impl DashboardDataLoader {
             .iter()
             .filter(|t| t.performance_metrics.success)
             .count();
-        let success_rate = if total_tests > 0 {
-            success_count as f32 / total_tests as f32 * 100.0
-        } else {
-            0.0
-        };
-        let avg_processing_time = if total_tests > 0 {
-            test_results
-                .iter()
-                .map(|t| t.alignment_result.execution_time_ms as f32)
-                .sum::<f32>()
-                / total_tests as f32
-        } else {
-            0.0
-        };
+        let success_rate = Self::calculate_success_rate(total_tests, success_count);
+        let processing_times: Vec<f32> = test_results
+            .iter()
+            .map(|t| t.alignment_result.execution_time_ms as f32)
+            .collect();
+        let avg_processing_time = Self::safe_average(&processing_times);
 
         // Get SEM image path from first test result
         let sem_image_path = test_results
@@ -230,7 +246,7 @@ impl DashboardDataLoader {
             }
         }
 
-        // Calculate summaries
+        // Calculate summaries with single pass optimization
         algorithm_stats
             .into_iter()
             .map(|(name, tests)| {
@@ -239,61 +255,27 @@ impl DashboardDataLoader {
                     .iter()
                     .filter(|t| t.performance_metrics.success)
                     .count();
-                let success_rate = if total_tests > 0 {
-                    success_count as f32 / total_tests as f32 * 100.0
-                } else {
-                    0.0
-                };
+                let success_rate = Self::calculate_success_rate(total_tests, success_count);
 
-                let avg_translation_error = if total_tests > 0 {
-                    tests
-                        .iter()
-                        .map(|t| t.performance_metrics.translation_error_px)
-                        .sum::<f32>()
-                        / total_tests as f32
-                } else {
-                    0.0
-                };
-
-                let avg_rotation_error = if total_tests > 0 {
-                    tests
-                        .iter()
-                        .map(|t| t.performance_metrics.rotation_error_deg)
-                        .sum::<f32>()
-                        / total_tests as f32
-                } else {
-                    0.0
-                };
-
-                let avg_processing_time = if total_tests > 0 {
-                    tests
-                        .iter()
-                        .map(|t| t.alignment_result.execution_time_ms as f32)
-                        .sum::<f32>()
-                        / total_tests as f32
-                } else {
-                    0.0
-                };
-
-                let avg_confidence = if total_tests > 0 {
-                    tests
-                        .iter()
-                        .map(|t| t.alignment_result.confidence as f32)
-                        .sum::<f32>()
-                        / total_tests as f32
-                } else {
-                    0.0
-                };
+                // Single pass to collect all metrics  
+                let mut translation_errors = Vec::with_capacity(total_tests);
+                let mut processing_times = Vec::with_capacity(total_tests);
+                let mut confidences = Vec::with_capacity(total_tests);
+                
+                for test in tests {
+                    translation_errors.push(test.performance_metrics.translation_error_px);
+                    processing_times.push(test.alignment_result.execution_time_ms as f32);
+                    confidences.push(test.alignment_result.confidence as f32);
+                }
 
                 AlgorithmSummary {
                     name,
                     total_tests,
                     success_count,
                     success_rate,
-                    avg_translation_error,
-                    avg_rotation_error,
-                    avg_processing_time,
-                    avg_confidence,
+                    avg_translation_error: Self::safe_average(&translation_errors),
+                    avg_processing_time: Self::safe_average(&processing_times),
+                    avg_confidence: Self::safe_average(&confidences),
                 }
             })
             .collect()
