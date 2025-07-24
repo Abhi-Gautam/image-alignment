@@ -1,4 +1,5 @@
 use crate::augmentation::base::*;
+use crate::config::NoiseConfig;
 use crate::pipeline::{AugmentedImage, GroundTruth, ImageAugmentation, Transform};
 use crate::Result;
 use opencv::core::{Mat, Scalar, RNG};
@@ -12,15 +13,27 @@ use std::collections::HashMap;
 pub struct GaussianNoiseAugmentation {
     base: AugmentationBase,
     mean: f64,
-    sigma_range: (f64, f64), // Standard deviation range
+    config: NoiseConfig,
 }
 
 impl GaussianNoiseAugmentation {
     pub fn new(sigma_range: (f64, f64)) -> Self {
+        let config = NoiseConfig {
+            gaussian_std_range: (sigma_range.0 as f32, sigma_range.1 as f32),
+            ..Default::default()
+        };
         Self {
             base: AugmentationBase::default(),
             mean: 0.0,
-            sigma_range,
+            config,
+        }
+    }
+
+    pub fn from_config(config: NoiseConfig) -> Self {
+        Self {
+            base: AugmentationBase::default(),
+            mean: 0.0,
+            config,
         }
     }
 
@@ -33,7 +46,7 @@ impl GaussianNoiseAugmentation {
 impl ImageAugmentation for GaussianNoiseAugmentation {
     fn apply(&self, image: &Mat) -> Result<AugmentedImage> {
         let mut base = self.base.clone();
-        let sigma = base.random_in_range(self.sigma_range.0, self.sigma_range.1);
+        let sigma = base.random_in_range(self.config.gaussian_std_range.0 as f64, self.config.gaussian_std_range.1 as f64);
 
         // Create noise matrix
         let mut noise = Mat::zeros(image.rows(), image.cols(), image.typ())?.to_mat()?;
@@ -91,14 +104,14 @@ impl ImageAugmentation for GaussianNoiseAugmentation {
     }
 
     fn description(&self) -> String {
-        format!("Gaussian noise with sigma in range {:?}", self.sigma_range)
+        format!("Gaussian noise with sigma in range {:?}", self.config.gaussian_std_range)
     }
 
     fn get_params(&self) -> HashMap<String, Value> {
         let mut params = HashMap::new();
         params.insert("type".to_string(), json!("gaussian_noise"));
         params.insert("mean".to_string(), json!(self.mean));
-        params.insert("sigma_range".to_string(), json!(self.sigma_range));
+        params.insert("sigma_range".to_string(), json!(self.config.gaussian_std_range));
         params
     }
 }
@@ -106,16 +119,28 @@ impl ImageAugmentation for GaussianNoiseAugmentation {
 /// Salt and pepper noise augmentation
 pub struct SaltPepperNoiseAugmentation {
     base: AugmentationBase,
-    noise_ratio_range: (f64, f64), // Proportion of pixels affected (0.0 to 1.0)
     salt_vs_pepper: f64,           // Ratio of salt to pepper (0.5 = equal)
+    config: NoiseConfig,
 }
 
 impl SaltPepperNoiseAugmentation {
     pub fn new(noise_ratio_range: (f64, f64)) -> Self {
+        let config = NoiseConfig {
+            salt_pepper_ratio: (noise_ratio_range.1 / 2.0) as f32,
+            ..Default::default()
+        };
         Self {
             base: AugmentationBase::default(),
-            noise_ratio_range,
             salt_vs_pepper: 0.5,
+            config,
+        }
+    }
+
+    pub fn from_config(config: NoiseConfig) -> Self {
+        Self {
+            base: AugmentationBase::default(),
+            salt_vs_pepper: 0.5,
+            config,
         }
     }
 
@@ -128,7 +153,7 @@ impl SaltPepperNoiseAugmentation {
 impl ImageAugmentation for SaltPepperNoiseAugmentation {
     fn apply(&self, image: &Mat) -> Result<AugmentedImage> {
         let mut base = self.base.clone();
-        let noise_ratio = base.random_in_range(self.noise_ratio_range.0, self.noise_ratio_range.1);
+        let noise_ratio = base.random_in_range(0.001, self.config.salt_pepper_ratio as f64 * 2.0);
 
         let mut output = image.clone();
         let total_pixels = (image.rows() * image.cols()) as usize;
@@ -186,7 +211,7 @@ impl ImageAugmentation for SaltPepperNoiseAugmentation {
     fn description(&self) -> String {
         format!(
             "Salt and pepper noise with ratio in range {:?}",
-            self.noise_ratio_range
+            (0.001, self.config.salt_pepper_ratio as f64 * 2.0)
         )
     }
 
@@ -195,7 +220,7 @@ impl ImageAugmentation for SaltPepperNoiseAugmentation {
         params.insert("type".to_string(), json!("salt_pepper_noise"));
         params.insert(
             "noise_ratio_range".to_string(),
-            json!(self.noise_ratio_range),
+            json!((0.001, self.config.salt_pepper_ratio as f64 * 2.0)),
         );
         params.insert("salt_vs_pepper".to_string(), json!(self.salt_vs_pepper));
         params

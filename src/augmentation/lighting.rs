@@ -1,4 +1,5 @@
 use crate::augmentation::base::*;
+use crate::config::LightingConfig;
 use crate::pipeline::{AugmentedImage, GroundTruth, ImageAugmentation, Transform};
 use crate::Result;
 use opencv::core::{Mat, Scalar};
@@ -9,14 +10,25 @@ use std::collections::HashMap;
 /// Brightness adjustment augmentation
 pub struct BrightnessAugmentation {
     base: AugmentationBase,
-    brightness_range: (f64, f64), // (-100, 100) typical range
+    config: LightingConfig,
 }
 
 impl BrightnessAugmentation {
     pub fn new(brightness_range: (f64, f64)) -> Self {
+        let config = LightingConfig {
+            brightness_range: (brightness_range.0 as f32, brightness_range.1 as f32),
+            ..Default::default()
+        };
         Self {
             base: AugmentationBase::default(),
-            brightness_range,
+            config,
+        }
+    }
+
+    pub fn from_config(config: LightingConfig) -> Self {
+        Self {
+            base: AugmentationBase::default(),
+            config,
         }
     }
 }
@@ -24,7 +36,7 @@ impl BrightnessAugmentation {
 impl ImageAugmentation for BrightnessAugmentation {
     fn apply(&self, image: &Mat) -> Result<AugmentedImage> {
         let mut base = self.base.clone();
-        let brightness = base.random_in_range(self.brightness_range.0, self.brightness_range.1);
+        let brightness = base.random_in_range(self.config.brightness_range.0 as f64, self.config.brightness_range.1 as f64);
 
         let mut output = Mat::default();
         image.convert_to(&mut output, -1, 1.0, brightness)?;
@@ -68,13 +80,13 @@ impl ImageAugmentation for BrightnessAugmentation {
     }
 
     fn description(&self) -> String {
-        format!("Brightness adjustment in range {:?}", self.brightness_range)
+        format!("Brightness adjustment in range {:?}", self.config.brightness_range)
     }
 
     fn get_params(&self) -> HashMap<String, Value> {
         let mut params = HashMap::new();
         params.insert("type".to_string(), json!("brightness"));
-        params.insert("range".to_string(), json!(self.brightness_range));
+        params.insert("range".to_string(), json!(self.config.brightness_range));
         params
     }
 }
@@ -82,14 +94,25 @@ impl ImageAugmentation for BrightnessAugmentation {
 /// Contrast adjustment augmentation
 pub struct ContrastAugmentation {
     base: AugmentationBase,
-    contrast_range: (f64, f64), // (0.5, 2.0) typical range
+    config: LightingConfig,
 }
 
 impl ContrastAugmentation {
     pub fn new(contrast_range: (f64, f64)) -> Self {
+        let config = LightingConfig {
+            contrast_range: (contrast_range.0 as f32, contrast_range.1 as f32),
+            ..Default::default()
+        };
         Self {
             base: AugmentationBase::default(),
-            contrast_range,
+            config,
+        }
+    }
+
+    pub fn from_config(config: LightingConfig) -> Self {
+        Self {
+            base: AugmentationBase::default(),
+            config,
         }
     }
 }
@@ -97,7 +120,7 @@ impl ContrastAugmentation {
 impl ImageAugmentation for ContrastAugmentation {
     fn apply(&self, image: &Mat) -> Result<AugmentedImage> {
         let mut base = self.base.clone();
-        let contrast = base.random_in_range(self.contrast_range.0, self.contrast_range.1);
+        let contrast = base.random_in_range(self.config.contrast_range.0 as f64, self.config.contrast_range.1 as f64);
 
         // Calculate mean for contrast adjustment
         let mean = opencv::core::mean(image, &opencv::core::no_array())?;
@@ -145,13 +168,13 @@ impl ImageAugmentation for ContrastAugmentation {
     }
 
     fn description(&self) -> String {
-        format!("Contrast adjustment in range {:?}", self.contrast_range)
+        format!("Contrast adjustment in range {:?}", self.config.contrast_range)
     }
 
     fn get_params(&self) -> HashMap<String, Value> {
         let mut params = HashMap::new();
         params.insert("type".to_string(), json!("contrast"));
-        params.insert("range".to_string(), json!(self.contrast_range));
+        params.insert("range".to_string(), json!(self.config.contrast_range));
         params
     }
 }
@@ -159,14 +182,25 @@ impl ImageAugmentation for ContrastAugmentation {
 /// Gamma correction augmentation
 pub struct GammaAugmentation {
     base: AugmentationBase,
-    gamma_range: (f64, f64), // (0.5, 2.0) typical range
+    config: LightingConfig,
 }
 
 impl GammaAugmentation {
     pub fn new(gamma_range: (f64, f64)) -> Self {
+        let config = LightingConfig {
+            gamma_range: (gamma_range.0 as f32, gamma_range.1 as f32),
+            ..Default::default()
+        };
         Self {
             base: AugmentationBase::default(),
-            gamma_range,
+            config,
+        }
+    }
+
+    pub fn from_config(config: LightingConfig) -> Self {
+        Self {
+            base: AugmentationBase::default(),
+            config,
         }
     }
 }
@@ -174,7 +208,7 @@ impl GammaAugmentation {
 impl ImageAugmentation for GammaAugmentation {
     fn apply(&self, image: &Mat) -> Result<AugmentedImage> {
         let mut base = self.base.clone();
-        let gamma = base.random_in_range(self.gamma_range.0, self.gamma_range.1);
+        let gamma = base.random_in_range(self.config.gamma_range.0 as f64, self.config.gamma_range.1 as f64);
 
         // Create lookup table for gamma correction
         let mut lookup_table = vec![0u8; 256];
@@ -222,13 +256,13 @@ impl ImageAugmentation for GammaAugmentation {
     }
 
     fn description(&self) -> String {
-        format!("Gamma correction in range {:?}", self.gamma_range)
+        format!("Gamma correction in range {:?}", self.config.gamma_range)
     }
 
     fn get_params(&self) -> HashMap<String, Value> {
         let mut params = HashMap::new();
         params.insert("type".to_string(), json!("gamma"));
-        params.insert("range".to_string(), json!(self.gamma_range));
+        params.insert("range".to_string(), json!(self.config.gamma_range));
         params
     }
 }

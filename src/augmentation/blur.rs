@@ -1,4 +1,5 @@
 use crate::augmentation::base::*;
+use crate::config::BlurConfig;
 use crate::pipeline::{AugmentedImage, GroundTruth, ImageAugmentation, Transform};
 use crate::Result;
 use opencv::core::{Mat, Point, Size};
@@ -11,14 +12,25 @@ use std::collections::HashMap;
 /// Gaussian blur augmentation
 pub struct GaussianBlurAugmentation {
     base: AugmentationBase,
-    sigma_range: (f64, f64), // Standard deviation range for blur kernel
+    config: BlurConfig,
 }
 
 impl GaussianBlurAugmentation {
     pub fn new(sigma_range: (f64, f64)) -> Self {
+        let config = BlurConfig {
+            gaussian_sigma_range: (sigma_range.0 as f32, sigma_range.1 as f32),
+            ..Default::default()
+        };
         Self {
             base: AugmentationBase::default(),
-            sigma_range,
+            config,
+        }
+    }
+
+    pub fn from_config(config: BlurConfig) -> Self {
+        Self {
+            base: AugmentationBase::default(),
+            config,
         }
     }
 }
@@ -26,7 +38,7 @@ impl GaussianBlurAugmentation {
 impl ImageAugmentation for GaussianBlurAugmentation {
     fn apply(&self, image: &Mat) -> Result<AugmentedImage> {
         let mut base = self.base.clone();
-        let sigma = base.random_in_range(self.sigma_range.0, self.sigma_range.1);
+        let sigma = base.random_in_range(self.config.gaussian_sigma_range.0 as f64, self.config.gaussian_sigma_range.1 as f64);
 
         let mut output = Mat::default();
         let ksize = Size::new(0, 0); // Auto-calculate kernel size from sigma
@@ -75,13 +87,13 @@ impl ImageAugmentation for GaussianBlurAugmentation {
     }
 
     fn description(&self) -> String {
-        format!("Gaussian blur with sigma in range {:?}", self.sigma_range)
+        format!("Gaussian blur with sigma in range {:?}", self.config.gaussian_sigma_range)
     }
 
     fn get_params(&self) -> HashMap<String, Value> {
         let mut params = HashMap::new();
         params.insert("type".to_string(), json!("gaussian_blur"));
-        params.insert("sigma_range".to_string(), json!(self.sigma_range));
+        params.insert("sigma_range".to_string(), json!(self.config.gaussian_sigma_range));
         params
     }
 }
@@ -89,16 +101,26 @@ impl ImageAugmentation for GaussianBlurAugmentation {
 /// Motion blur augmentation (simulates camera shake or object motion)
 pub struct MotionBlurAugmentation {
     base: AugmentationBase,
-    length_range: (i32, i32), // Motion blur length in pixels
-    angle_range: (f64, f64),  // Motion blur angle in degrees
+    config: BlurConfig,
 }
 
 impl MotionBlurAugmentation {
     pub fn new(length_range: (i32, i32), angle_range: (f64, f64)) -> Self {
+        let config = BlurConfig {
+            motion_length_range: length_range,
+            motion_angle_range: (angle_range.0 as f32, angle_range.1 as f32),
+            ..Default::default()
+        };
         Self {
             base: AugmentationBase::default(),
-            length_range,
-            angle_range,
+            config,
+        }
+    }
+
+    pub fn from_config(config: BlurConfig) -> Self {
+        Self {
+            base: AugmentationBase::default(),
+            config,
         }
     }
 }
@@ -106,8 +128,8 @@ impl MotionBlurAugmentation {
 impl ImageAugmentation for MotionBlurAugmentation {
     fn apply(&self, image: &Mat) -> Result<AugmentedImage> {
         let mut base = self.base.clone();
-        let length = Rng::gen_range(&mut base.rng, self.length_range.0..=self.length_range.1);
-        let angle = base.random_in_range(self.angle_range.0, self.angle_range.1);
+        let length = Rng::gen_range(&mut base.rng, self.config.motion_length_range.0..=self.config.motion_length_range.1);
+        let angle = base.random_in_range(self.config.motion_angle_range.0 as f64, self.config.motion_angle_range.1 as f64);
 
         // Create motion blur kernel
         let kernel = create_motion_blur_kernel(length, angle)?;
@@ -160,15 +182,15 @@ impl ImageAugmentation for MotionBlurAugmentation {
     fn description(&self) -> String {
         format!(
             "Motion blur with length {:?} and angle {:?}",
-            self.length_range, self.angle_range
+            self.config.motion_length_range, self.config.motion_angle_range
         )
     }
 
     fn get_params(&self) -> HashMap<String, Value> {
         let mut params = HashMap::new();
         params.insert("type".to_string(), json!("motion_blur"));
-        params.insert("length_range".to_string(), json!(self.length_range));
-        params.insert("angle_range".to_string(), json!(self.angle_range));
+        params.insert("length_range".to_string(), json!(self.config.motion_length_range));
+        params.insert("angle_range".to_string(), json!(self.config.motion_angle_range));
         params
     }
 }

@@ -1,4 +1,5 @@
 use crate::augmentation::base::*;
+use crate::config::AugmentationConfig;
 use crate::pipeline::{AugmentedImage, ImageAugmentation, Transform};
 use crate::utils::{grayimage_to_mat, image_to_grayimage};
 use crate::Result;
@@ -118,6 +119,7 @@ impl ImageAugmentation for CompositeAugmentation {
 pub struct RealisticSEMAugmentation {
     base: AugmentationBase,
     intensity: f64, // Overall intensity of effects (0.0 to 1.0)
+    config: AugmentationConfig,
 }
 
 impl RealisticSEMAugmentation {
@@ -125,7 +127,13 @@ impl RealisticSEMAugmentation {
         Self {
             base: AugmentationBase::default(),
             intensity: intensity.clamp(0.0, 1.0),
+            config: AugmentationConfig::default(),
         }
+    }
+
+    pub fn with_config(mut self, config: AugmentationConfig) -> Self {
+        self.config = config;
+        self
     }
 }
 
@@ -136,53 +144,78 @@ impl ImageAugmentation for RealisticSEMAugmentation {
         // Create a composite augmentation with realistic SEM effects
         let mut composite = CompositeAugmentation::new();
 
-        // Scale effect intensities based on overall intensity
+        // Scale effect intensities based on overall intensity and config
         let light_intensity = self.intensity * 0.3;
         let noise_intensity = self.intensity * 0.2;
         let blur_intensity = self.intensity * 0.1;
         let distortion_intensity = self.intensity * 0.1;
 
         // Add lighting variations (common in SEM due to charging effects)
-        if light_intensity > 0.0 {
+        if light_intensity > 0.0 && self.config.lighting.enable_brightness {
+            let brightness_range = self.config.lighting.brightness_range;
+            let adjusted_range = (
+                brightness_range.0 * light_intensity as f32,
+                brightness_range.1 * light_intensity as f32,
+            );
+            
             composite = composite.add_augmentation(Box::new(LocalIlluminationAugmentation::new(
-                (-20.0 * light_intensity, 20.0 * light_intensity),
+                (adjusted_range.0 as f64, adjusted_range.1 as f64),
                 GradientType::Radial,
             )));
 
+            let brightness_intensity = adjusted_range.0 / 2.0;
             composite = composite.add_augmentation(Box::new(BrightnessAugmentation::new((
-                -10.0 * light_intensity,
-                10.0 * light_intensity,
+                brightness_intensity as f64,
+                -brightness_intensity as f64,
             ))));
         }
 
         // Add noise (shot noise is very common in SEM)
         if noise_intensity > 0.0 {
-            composite = composite.add_augmentation(Box::new(ShotNoiseAugmentation::new((
-                0.001 * noise_intensity,
-                0.01 * noise_intensity,
-            ))));
+            if self.config.noise.enable_gaussian {
+                let gaussian_range = self.config.noise.gaussian_std_range;
+                let adjusted_range = (
+                    gaussian_range.0 * noise_intensity as f32 * 0.1,
+                    gaussian_range.1 * noise_intensity as f32 * 0.1,
+                );
+                composite = composite.add_augmentation(Box::new(ShotNoiseAugmentation::new((
+                    adjusted_range.0 as f64,
+                    adjusted_range.1 as f64,
+                ))));
+            }
 
             // Occasional salt-and-pepper from detector issues
-            if self.base.clone().random_bool(0.3) {
+            if self.config.noise.enable_salt_pepper && self.base.clone().random_bool(0.3) {
+                let salt_pepper_ratio = self.config.noise.salt_pepper_ratio * noise_intensity as f32;
                 composite = composite.add_augmentation(Box::new(SaltPepperNoiseAugmentation::new(
-                    (0.001 * noise_intensity, 0.005 * noise_intensity),
+                    ((salt_pepper_ratio * 0.1) as f64, (salt_pepper_ratio * 0.5) as f64)
                 )));
             }
         }
 
         // Add slight blur (due to beam size and astigmatism)
-        if blur_intensity > 0.0 {
+        if blur_intensity > 0.0 && self.config.blur.enable_gaussian {
+            let sigma_range = self.config.blur.gaussian_sigma_range;
+            let adjusted_range = (
+                sigma_range.0 * blur_intensity as f32 * 0.2,
+                sigma_range.1 * blur_intensity as f32 * 0.2,
+            );
             composite = composite.add_augmentation(Box::new(GaussianBlurAugmentation::new((
-                0.1 * blur_intensity,
-                0.5 * blur_intensity,
+                adjusted_range.0 as f64,
+                adjusted_range.1 as f64,
             ))));
         }
 
         // Add slight distortion (from magnetic field variations)
-        if distortion_intensity > 0.0 && self.base.clone().random_bool(0.2) {
+        if distortion_intensity > 0.0 && self.config.distortion.enable_barrel && self.base.clone().random_bool(0.2) {
+            let barrel_range = self.config.distortion.barrel_distortion_range;
+            let adjusted_range = (
+                barrel_range.0 * distortion_intensity as f32,
+                barrel_range.1 * distortion_intensity as f32,
+            );
             composite = composite.add_augmentation(Box::new(BarrelDistortionAugmentation::new((
-                -0.1 * distortion_intensity,
-                0.1 * distortion_intensity,
+                adjusted_range.0 as f64,
+                adjusted_range.1 as f64,
             ))));
         }
 
@@ -326,4 +359,3 @@ impl ImageAugmentation for DriftSimulationAugmentation {
         params
     }
 }
-
