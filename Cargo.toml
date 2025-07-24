@@ -6,7 +6,7 @@ description = "Real-time unsupervised semiconductor wafer image alignment system
 authors = ["Developer"]
 
 [dependencies]
-# opencv = "0.91"  # Temporarily disabled - will enable when system dependencies are ready
+# opencv = "0.91"  # Enable when system dependencies are properly configured
 image = "0.25"
 ndarray = "0.16"
 rustfft = "6.2"
