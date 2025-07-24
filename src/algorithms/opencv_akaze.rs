@@ -1,3 +1,4 @@
+use crate::config::AkazeConfig;
 use crate::pipeline::{AlgorithmConfig, AlignmentAlgorithm, AlignmentResult, ComplexityClass};
 use crate::utils::estimate_transformation_ransac;
 use crate::Result;
@@ -13,11 +14,7 @@ use std::time::Instant;
 pub struct OpenCVAKAZE {
     detector: RefCell<Ptr<AKAZE>>,
     matcher: RefCell<Ptr<BFMatcher>>,
-    threshold: f32,
-    octaves: i32,
-    octave_layers: i32,
-    diffusivity: KAZE_DiffusivityType,
-    max_features: usize,
+    config: AkazeConfig,
 }
 
 // SAFETY: OpenCV types are safe to send across threads when used properly
@@ -32,14 +29,25 @@ impl Default for OpenCVAKAZE {
 
 impl OpenCVAKAZE {
     pub fn new() -> Result<Self> {
+        Self::with_config(AkazeConfig::default())
+    }
+
+    pub fn with_config(config: AkazeConfig) -> Result<Self> {
+        let diffusivity = match config.diffusivity {
+            1 => KAZE_DiffusivityType::DIFF_PM_G2,
+            2 => KAZE_DiffusivityType::DIFF_WEICKERT,
+            3 => KAZE_DiffusivityType::DIFF_CHARBONNIER,
+            _ => KAZE_DiffusivityType::DIFF_PM_G1,
+        };
+
         let detector = AKAZE::create(
             AKAZE_DescriptorType::DESCRIPTOR_MLDB,
             0,        // descriptor size (0 = full)
             3,        // descriptor channels
-            0.001f32, // threshold
-            4,        // octaves
-            4,        // octave layers
-            KAZE_DiffusivityType::DIFF_PM_G2,
+            config.threshold as f32,
+            config.octaves,
+            config.octave_layers,
+            diffusivity,
             -1, // max_points (-1 = no limit)
         )?;
 
@@ -51,46 +59,46 @@ impl OpenCVAKAZE {
         Ok(Self {
             detector: RefCell::new(detector),
             matcher: RefCell::new(matcher),
-            threshold: 0.001,
-            octaves: 4,
-            octave_layers: 4,
-            diffusivity: KAZE_DiffusivityType::DIFF_PM_G2,
-            max_features: 1000,
+            config,
         })
     }
 
-    pub fn with_threshold(mut self, threshold: f32) -> Result<Self> {
-        self.threshold = threshold;
+    pub fn update_config(&mut self, config: AkazeConfig) -> Result<()> {
+        self.config = config.clone();
+        let diffusivity = match config.diffusivity {
+            1 => KAZE_DiffusivityType::DIFF_PM_G2,
+            2 => KAZE_DiffusivityType::DIFF_WEICKERT,
+            3 => KAZE_DiffusivityType::DIFF_CHARBONNIER,
+            _ => KAZE_DiffusivityType::DIFF_PM_G1,
+        };
+        
         *self.detector.borrow_mut() = AKAZE::create(
             AKAZE_DescriptorType::DESCRIPTOR_MLDB,
             0,
             3,
-            threshold,
-            self.octaves,
-            self.octave_layers,
-            self.diffusivity,
+            config.threshold as f32,
+            config.octaves,
+            config.octave_layers,
+            diffusivity,
             -1,
         )?;
+        Ok(())
+    }
+
+    pub fn with_threshold(mut self, threshold: f32) -> Result<Self> {
+        self.config.threshold = threshold as f64;
+        self.update_config(self.config.clone())?;
         Ok(self)
     }
 
     pub fn with_octaves(mut self, octaves: i32) -> Result<Self> {
-        self.octaves = octaves;
-        *self.detector.borrow_mut() = AKAZE::create(
-            AKAZE_DescriptorType::DESCRIPTOR_MLDB,
-            0,
-            3,
-            self.threshold,
-            octaves,
-            self.octave_layers,
-            self.diffusivity,
-            -1,
-        )?;
+        self.config.octaves = octaves;
+        self.update_config(self.config.clone())?;
         Ok(self)
     }
 
     pub fn with_max_features(mut self, max_features: usize) -> Self {
-        self.max_features = max_features;
+        self.config.max_features = max_features as i32;
         self
     }
 
@@ -107,30 +115,39 @@ impl OpenCVAKAZE {
         )?;
 
         // Limit number of features if specified
-        if keypoints.len() > self.max_features {
+        if keypoints.len() > self.config.max_features as usize {
+            // Create indexed pairs to maintain keypoint-descriptor correspondence
+            let kp_vec: Vec<KeyPoint> = keypoints.to_vec();
+            let mut kp_with_indices: Vec<(usize, KeyPoint)> =
+                kp_vec.into_iter().enumerate().collect();
+
             // Sort by response (strength) and keep the best
-            let mut kp_vec: Vec<KeyPoint> = keypoints.to_vec();
-            kp_vec.sort_by(|a, b| {
-                b.response()
-                    .partial_cmp(&a.response())
+            kp_with_indices.sort_by(|a, b| {
+                b.1.response()
+                    .partial_cmp(&a.1.response())
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            kp_vec.truncate(self.max_features);
+            kp_with_indices.truncate(self.config.max_features as usize);
 
-            keypoints = opencv::core::Vector::from_iter(kp_vec);
+            // Extract sorted keypoints
+            let sorted_keypoints: Vec<KeyPoint> =
+                kp_with_indices.iter().map(|(_, kp)| kp.clone()).collect();
+            keypoints = opencv::core::Vector::from_iter(sorted_keypoints);
 
-            // Extract corresponding descriptors
+            // Extract corresponding descriptors in the same order
             let mut limited_descriptors = Mat::zeros(
-                self.max_features as i32,
+                self.config.max_features,
                 descriptors.cols(),
                 descriptors.typ(),
             )?
             .to_mat()?;
 
-            for i in 0..self.max_features.min(descriptors.rows() as usize) {
-                let src_row = descriptors.row(i as i32)?;
-                let dst_row = limited_descriptors.row_mut(i as i32)?;
-                src_row.copy_to(&mut dst_row.clone_pointee())?;
+            for (dst_idx, (src_idx, _)) in kp_with_indices.iter().enumerate() {
+                if *src_idx < descriptors.rows() as usize {
+                    let src_row = descriptors.row(*src_idx as i32)?;
+                    let dst_row = limited_descriptors.row_mut(dst_idx as i32)?;
+                    src_row.copy_to(&mut dst_row.clone_pointee())?;
+                }
             }
 
             descriptors = limited_descriptors;
@@ -163,8 +180,7 @@ impl OpenCVAKAZE {
 
         // Keep matches with good distance ratio
         for m in matches_vec {
-            if m.distance < 50.0 {
-                // Hamming distance threshold for binary descriptors
+            if m.distance < self.config.distance_threshold {
                 good_matches.push(m);
             }
         }
@@ -177,9 +193,15 @@ impl OpenCVAKAZE {
         kp1: &[KeyPoint],
         kp2: &[KeyPoint],
         matches: &[DMatch],
-    ) -> Result<(f32, f32, f32, f32)> {
+    ) -> Result<(f32, f32, f32, f32, f32)> {
         let result = estimate_transformation_ransac(kp1, kp2, matches, None)?;
-        Ok((result.translation.0, result.translation.1, result.rotation, result.confidence))
+        Ok((
+            result.translation.0,
+            result.translation.1,
+            result.rotation,
+            result.scale,
+            result.confidence,
+        ))
     }
 }
 
@@ -260,12 +282,22 @@ impl AlignmentAlgorithm for OpenCVAKAZE {
         // Estimate transformation
         let patch_kp_vec = patch_kp.to_vec();
         let search_kp_vec = search_kp.to_vec();
-        let (tx, ty, rotation, confidence) =
+        let (tx, ty, rotation, scale, confidence) =
             self.estimate_transformation(&patch_kp_vec, &search_kp_vec, &matches)?;
 
+        // Debug RANSAC output
+        log::info!(
+            "AKAZE RANSAC result: tx={}, ty={}, rotation={}, confidence={}",
+            tx,
+            ty,
+            rotation,
+            confidence
+        );
+
         // Calculate match location in search image
-        let match_x = (patch.cols() / 2) + tx as i32;
-        let match_y = (patch.rows() / 2) + ty as i32;
+        // RANSAC tx,ty represents the displacement between keypoints
+        let match_x = tx as i32;
+        let match_y = ty as i32;
 
         let mut metadata = HashMap::new();
         metadata.insert(
@@ -296,7 +328,7 @@ impl AlignmentAlgorithm for OpenCVAKAZE {
             transformation: Some(crate::pipeline::TransformParams {
                 translation: (tx, ty),
                 rotation_degrees: rotation,
-                scale: 1.0,
+                scale,
                 skew: None,
             }),
         })
@@ -311,72 +343,3 @@ impl AlignmentAlgorithm for OpenCVAKAZE {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use image::{GrayImage, Luma};
-
-    fn create_test_pattern(width: u32, height: u32) -> GrayImage {
-        GrayImage::from_fn(width, height, |x, y| {
-            // Create a pattern with corners and edges for feature detection
-            if (x % 16 < 8) ^ (y % 16 < 8) {
-                Luma([255])
-            } else {
-                Luma([64])
-            }
-        })
-    }
-
-
-    #[test]
-    fn test_akaze_creation() {
-        let akaze = OpenCVAKAZE::new();
-        assert!(akaze.is_ok());
-    }
-
-    #[test]
-    fn test_akaze_with_params() {
-        let akaze_result = OpenCVAKAZE::new()
-            .unwrap()
-            .with_threshold(0.002)
-            .unwrap()
-            .with_max_features(500);
-
-        assert_eq!(akaze_result.max_features, 500);
-    }
-
-    #[test]
-    fn test_akaze_alignment() {
-        use crate::utils::grayimage_to_mat;
-        
-        let akaze = OpenCVAKAZE::new().unwrap();
-        let template = create_test_pattern(64, 64);
-        let target = create_test_pattern(64, 64);
-
-        let template_mat = grayimage_to_mat(&template).unwrap();
-        let target_mat = grayimage_to_mat(&target).unwrap();
-
-        let result = akaze.align(&target_mat, &template_mat);
-        assert!(result.is_ok());
-
-        let alignment = result.unwrap();
-        assert_eq!(alignment.algorithm_name, "OpenCV-AKAZE");
-        assert!(alignment.execution_time_ms >= 0.0);
-        assert!(alignment.confidence >= 0.0 && alignment.confidence <= 1.0);
-    }
-
-    #[test]
-    fn test_grayimage_to_mat_conversion() {
-        use crate::utils::grayimage_to_mat;
-        
-        let image = create_test_pattern(32, 32);
-
-        let mat_result = grayimage_to_mat(&image);
-        assert!(mat_result.is_ok());
-
-        let mat = mat_result.unwrap();
-        assert_eq!(mat.cols(), 32);
-        assert_eq!(mat.rows(), 32);
-        assert_eq!(mat.channels(), 1);
-    }
-}

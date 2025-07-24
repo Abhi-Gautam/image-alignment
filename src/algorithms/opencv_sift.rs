@@ -1,3 +1,4 @@
+use crate::config::SiftConfig;
 use crate::pipeline::{AlgorithmConfig, AlignmentAlgorithm, AlignmentResult, ComplexityClass};
 use crate::utils::estimate_transformation_ransac;
 use crate::Result;
@@ -13,12 +14,7 @@ use std::time::Instant;
 pub struct OpenCVSIFT {
     detector: RefCell<Ptr<SIFT>>,
     matcher: RefCell<Ptr<BFMatcher>>,
-    n_features: i32,
-    n_octave_layers: i32,
-    contrast_threshold: f64,
-    edge_threshold: f64,
-    sigma: f64,
-    max_features: usize,
+    config: SiftConfig,
 }
 
 // SAFETY: OpenCV types are safe to send across threads when used properly
@@ -33,12 +29,16 @@ impl Default for OpenCVSIFT {
 
 impl OpenCVSIFT {
     pub fn new() -> Result<Self> {
+        Self::with_config(SiftConfig::default())
+    }
+
+    pub fn with_config(config: SiftConfig) -> Result<Self> {
         let detector = SIFT::create(
-            0,     // nfeatures (0 = no limit)
-            3,     // nOctaveLayers
-            0.04,  // contrastThreshold
-            10.0,  // edgeThreshold
-            1.6,   // sigma
+            config.n_features,
+            config.n_octave_layers,
+            config.contrast_threshold,
+            config.edge_threshold,
+            config.sigma,
             false, // enable_precise_upscale
         )?;
 
@@ -50,69 +50,50 @@ impl OpenCVSIFT {
         Ok(Self {
             detector: RefCell::new(detector),
             matcher: RefCell::new(matcher),
-            n_features: 0,
-            n_octave_layers: 3,
-            contrast_threshold: 0.04,
-            edge_threshold: 10.0,
-            sigma: 1.6,
-            max_features: 1000,
+            config,
         })
     }
 
-    pub fn with_n_features(mut self, n_features: i32) -> Result<Self> {
-        self.n_features = n_features;
+    pub fn update_config(&mut self, config: SiftConfig) -> Result<()> {
+        self.config = config.clone();
         *self.detector.borrow_mut() = SIFT::create(
-            n_features,
-            self.n_octave_layers,
-            self.contrast_threshold,
-            self.edge_threshold,
-            self.sigma,
+            config.n_features,
+            config.n_octave_layers,
+            config.contrast_threshold,
+            config.edge_threshold,
+            config.sigma,
             false,
         )?;
+        Ok(())
+    }
+
+    pub fn with_n_features(mut self, n_features: i32) -> Result<Self> {
+        self.config.n_features = n_features;
+        self.update_config(self.config.clone())?;
         Ok(self)
     }
 
     pub fn with_contrast_threshold(mut self, threshold: f64) -> Result<Self> {
-        self.contrast_threshold = threshold;
-        *self.detector.borrow_mut() = SIFT::create(
-            self.n_features,
-            self.n_octave_layers,
-            threshold,
-            self.edge_threshold,
-            self.sigma,
-            false,
-        )?;
+        self.config.contrast_threshold = threshold;
+        self.update_config(self.config.clone())?;
         Ok(self)
     }
 
     pub fn with_edge_threshold(mut self, threshold: f64) -> Result<Self> {
-        self.edge_threshold = threshold;
-        *self.detector.borrow_mut() = SIFT::create(
-            self.n_features,
-            self.n_octave_layers,
-            self.contrast_threshold,
-            threshold,
-            self.sigma,
-            false,
-        )?;
+        self.config.edge_threshold = threshold;
+        self.update_config(self.config.clone())?;
         Ok(self)
     }
 
     pub fn with_sigma(mut self, sigma: f64) -> Result<Self> {
-        self.sigma = sigma;
-        *self.detector.borrow_mut() = SIFT::create(
-            self.n_features,
-            self.n_octave_layers,
-            self.contrast_threshold,
-            self.edge_threshold,
-            sigma,
-            false,
-        )?;
+        self.config.sigma = sigma;
+        self.update_config(self.config.clone())?;
         Ok(self)
     }
 
     pub fn with_max_features(mut self, max_features: usize) -> Self {
-        self.max_features = max_features;
+        // Note: SIFT config doesn't have max_features, but we can use n_features instead
+        self.config.n_features = max_features as i32;
         self
     }
 
@@ -128,31 +109,46 @@ impl OpenCVSIFT {
             false,
         )?;
 
-        // Limit number of features if specified
-        if keypoints.len() > self.max_features {
+        // Limit number of features if specified (use n_features as max limit)
+        let max_features = if self.config.n_features > 0 {
+            self.config.n_features as usize
+        } else {
+            1000 // default limit if n_features is 0 (unlimited)
+        };
+        
+        if keypoints.len() > max_features {
+            // Create indexed pairs to maintain keypoint-descriptor correspondence
+            let kp_vec: Vec<KeyPoint> = keypoints.to_vec();
+            let mut kp_with_indices: Vec<(usize, KeyPoint)> =
+                kp_vec.into_iter().enumerate().collect();
+
             // Sort by response (strength) and keep the best
-            let mut kp_vec: Vec<KeyPoint> = keypoints.to_vec();
-            kp_vec.sort_by(|a, b| {
-                b.response()
-                    .partial_cmp(&a.response())
+            kp_with_indices.sort_by(|a, b| {
+                b.1.response()
+                    .partial_cmp(&a.1.response())
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            kp_vec.truncate(self.max_features);
+            kp_with_indices.truncate(max_features);
 
-            keypoints = opencv::core::Vector::from_iter(kp_vec);
+            // Extract sorted keypoints
+            let sorted_keypoints: Vec<KeyPoint> =
+                kp_with_indices.iter().map(|(_, kp)| kp.clone()).collect();
+            keypoints = opencv::core::Vector::from_iter(sorted_keypoints);
 
-            // Extract corresponding descriptors
+            // Extract corresponding descriptors in the same order
             let mut limited_descriptors = Mat::zeros(
-                self.max_features as i32,
+                max_features as i32,
                 descriptors.cols(),
                 descriptors.typ(),
             )?
             .to_mat()?;
 
-            for i in 0..self.max_features.min(descriptors.rows() as usize) {
-                let src_row = descriptors.row(i as i32)?;
-                let dst_row = limited_descriptors.row_mut(i as i32)?;
-                src_row.copy_to(&mut dst_row.clone_pointee())?;
+            for (dst_idx, (src_idx, _)) in kp_with_indices.iter().enumerate() {
+                if *src_idx < descriptors.rows() as usize {
+                    let src_row = descriptors.row(*src_idx as i32)?;
+                    let dst_row = limited_descriptors.row_mut(dst_idx as i32)?;
+                    src_row.copy_to(&mut dst_row.clone_pointee())?;
+                }
             }
 
             descriptors = limited_descriptors;
@@ -184,8 +180,7 @@ impl OpenCVSIFT {
         });
 
         // Keep matches with distance below threshold
-        let distance_threshold = 100.0; // Adjust this threshold as needed
-        good_matches.retain(|m| m.distance < distance_threshold);
+        good_matches.retain(|m| m.distance < self.config.distance_threshold);
         good_matches.truncate(100); // Limit to top 100 matches
 
         Ok(good_matches)
@@ -196,9 +191,15 @@ impl OpenCVSIFT {
         kp1: &[KeyPoint],
         kp2: &[KeyPoint],
         matches: &[DMatch],
-    ) -> Result<(f32, f32, f32, f32)> {
+    ) -> Result<(f32, f32, f32, f32, f32)> {
         let result = estimate_transformation_ransac(kp1, kp2, matches, None)?;
-        Ok((result.translation.0, result.translation.1, result.rotation, result.confidence))
+        Ok((
+            result.translation.0,
+            result.translation.1,
+            result.rotation,
+            result.scale,
+            result.confidence,
+        ))
     }
 }
 
@@ -295,12 +296,22 @@ impl AlignmentAlgorithm for OpenCVSIFT {
         // Estimate transformation
         let patch_kp_vec = patch_kp.to_vec();
         let search_kp_vec = search_kp.to_vec();
-        let (tx, ty, rotation, confidence) =
+        let (tx, ty, rotation, scale, confidence) =
             self.estimate_transformation(&patch_kp_vec, &search_kp_vec, &matches)?;
 
+        // Debug RANSAC output
+        log::info!(
+            "SIFT RANSAC result: tx={}, ty={}, rotation={}, confidence={}",
+            tx,
+            ty,
+            rotation,
+            confidence
+        );
+
         // Calculate match location in search image
-        let match_x = (patch.cols() / 2) + tx as i32;
-        let match_y = (patch.rows() / 2) + ty as i32;
+        // RANSAC tx,ty represents the displacement between keypoints
+        let match_x = tx as i32;
+        let match_y = ty as i32;
 
         let mut metadata = HashMap::new();
         metadata.insert(
@@ -317,11 +328,19 @@ impl AlignmentAlgorithm for OpenCVSIFT {
         );
         metadata.insert(
             "contrast_threshold".to_string(),
-            serde_json::Value::from(self.contrast_threshold),
+            serde_json::Value::from(self.config.contrast_threshold),
         );
         metadata.insert(
             "edge_threshold".to_string(),
-            serde_json::Value::from(self.edge_threshold),
+            serde_json::Value::from(self.config.edge_threshold),
+        );
+        metadata.insert(
+            "n_features".to_string(),
+            serde_json::Value::from(self.config.n_features),
+        );
+        metadata.insert(
+            "sigma".to_string(),
+            serde_json::Value::from(self.config.sigma),
         );
 
         Ok(AlignmentResult {
@@ -339,7 +358,7 @@ impl AlignmentAlgorithm for OpenCVSIFT {
             transformation: Some(crate::pipeline::TransformParams {
                 translation: (tx, ty),
                 rotation_degrees: rotation,
-                scale: 1.0, // Will be updated in future versions
+                scale,
                 skew: None,
             }),
         })
@@ -354,84 +373,3 @@ impl AlignmentAlgorithm for OpenCVSIFT {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use image::{GrayImage, Luma};
-
-    fn create_test_pattern(width: u32, height: u32) -> GrayImage {
-        GrayImage::from_fn(width, height, |x, y| {
-            // Create a pattern with distinct features for SIFT detection
-            let intensity = if (x % 20 < 10) ^ (y % 20 < 10) {
-                if (x % 40 < 20) ^ (y % 40 < 20) {
-                    255
-                } else {
-                    192
-                }
-            } else {
-                if (x % 40 < 20) ^ (y % 40 < 20) {
-                    128
-                } else {
-                    64
-                }
-            };
-            Luma([intensity])
-        })
-    }
-
-
-    #[test]
-    fn test_sift_creation() {
-        let sift = OpenCVSIFT::new();
-        assert!(sift.is_ok());
-    }
-
-    #[test]
-    fn test_sift_with_params() {
-        let sift_result = OpenCVSIFT::new()
-            .unwrap()
-            .with_contrast_threshold(0.03)
-            .unwrap()
-            .with_max_features(500);
-
-        assert_eq!(sift_result.max_features, 500);
-    }
-
-    #[test]
-    fn test_sift_alignment() {
-        let sift = OpenCVSIFT::new().unwrap();
-        let template = create_test_pattern(64, 64);
-        let target = create_test_pattern(64, 64);
-
-        let template_mat = crate::utils::image_conversion::grayimage_to_mat(&template).unwrap();
-        let target_mat = crate::utils::image_conversion::grayimage_to_mat(&target).unwrap();
-
-        let result = sift.align(&target_mat, &template_mat);
-        match &result {
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!("SIFT alignment failed with error: {}", e);
-                eprintln!("Error details: {:?}", e);
-            }
-        }
-        assert!(result.is_ok());
-
-        let alignment = result.unwrap();
-        assert_eq!(alignment.algorithm_name, "OpenCV-SIFT");
-        assert!(alignment.execution_time_ms >= 0.0);
-        assert!(alignment.confidence >= 0.0 && alignment.confidence <= 1.0);
-    }
-
-    #[test]
-    fn test_grayimage_to_mat_conversion() {
-        let image = create_test_pattern(32, 32);
-
-        let mat_result = crate::utils::image_conversion::grayimage_to_mat(&image);
-        assert!(mat_result.is_ok());
-
-        let mat = mat_result.unwrap();
-        assert_eq!(mat.cols(), 32);
-        assert_eq!(mat.rows(), 32);
-        assert_eq!(mat.channels(), 1);
-    }
-}

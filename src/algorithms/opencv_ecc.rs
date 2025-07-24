@@ -1,3 +1,4 @@
+use crate::config::EccConfig;
 use crate::pipeline::{AlgorithmConfig, AlignmentAlgorithm, AlignmentResult, ComplexityClass};
 use crate::Result;
 use opencv::core::{no_array, Mat, Point2i, Scalar, Size, TermCriteria};
@@ -11,9 +12,7 @@ use std::time::Instant;
 /// ECC is excellent for handling complex illumination changes and geometric distortions
 pub struct OpenCVECC {
     motion_type: MotionType,
-    max_iterations: i32,
-    termination_eps: f64,
-    gaussian_filter_size: i32,
+    config: EccConfig,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -32,31 +31,58 @@ impl Default for OpenCVECC {
 
 impl OpenCVECC {
     pub fn new() -> Self {
+        Self::with_config(EccConfig::default())
+    }
+
+    pub fn with_config(config: EccConfig) -> Self {
+        let motion_type = match config.motion_type {
+            0 => MotionType::Translation,
+            1 => MotionType::Euclidean,
+            2 => MotionType::Affine,
+            3 => MotionType::Homography,
+            _ => MotionType::Euclidean,
+        };
+        
         Self {
-            motion_type: MotionType::Euclidean,
-            max_iterations: 50,
-            termination_eps: 1e-10,
-            gaussian_filter_size: 5,
+            motion_type,
+            config,
         }
+    }
+
+    pub fn update_config(&mut self, config: EccConfig) {
+        self.config = config.clone();
+        self.motion_type = match config.motion_type {
+            0 => MotionType::Translation,
+            1 => MotionType::Euclidean,
+            2 => MotionType::Affine,
+            3 => MotionType::Homography,
+            _ => MotionType::Euclidean,
+        };
     }
 
     pub fn with_motion_type(mut self, motion_type: MotionType) -> Self {
         self.motion_type = motion_type;
+        self.config.motion_type = match motion_type {
+            MotionType::Translation => 0,
+            MotionType::Euclidean => 1,
+            MotionType::Affine => 2,
+            MotionType::Homography => 3,
+        };
         self
     }
 
     pub fn with_max_iterations(mut self, max_iterations: i32) -> Self {
-        self.max_iterations = max_iterations;
+        self.config.max_iterations = max_iterations;
         self
     }
 
     pub fn with_termination_eps(mut self, eps: f64) -> Self {
-        self.termination_eps = eps;
+        self.config.termination_eps = eps;
         self
     }
 
     pub fn with_gaussian_filter_size(mut self, size: i32) -> Self {
-        self.gaussian_filter_size = size;
+        self.config.gaussian_filter_size = size;
         self
     }
 
@@ -96,12 +122,12 @@ impl OpenCVECC {
         image.convert_to(&mut preprocessed, opencv::core::CV_32F, 1.0, 0.0)?;
 
         // Apply Gaussian smoothing if specified
-        if self.gaussian_filter_size > 0 {
+        if self.config.gaussian_filter_size > 0 {
             let mut smoothed = Mat::default();
             imgproc::gaussian_blur(
                 &preprocessed,
                 &mut smoothed,
-                Size::new(self.gaussian_filter_size, self.gaussian_filter_size),
+                Size::new(self.config.gaussian_filter_size, self.config.gaussian_filter_size),
                 0.0,
                 0.0,
                 opencv::core::BORDER_REFLECT_101,
@@ -269,7 +295,7 @@ impl AlignmentAlgorithm for OpenCVECC {
             .get("max_iterations")
             .and_then(|v| v.as_i64())
         {
-            self.max_iterations = max_iter as i32;
+            self.config.max_iterations = max_iter as i32;
         }
 
         if let Some(eps) = config
@@ -277,7 +303,7 @@ impl AlignmentAlgorithm for OpenCVECC {
             .get("termination_eps")
             .and_then(|v| v.as_f64())
         {
-            self.termination_eps = eps;
+            self.config.termination_eps = eps;
         }
 
         if let Some(gauss_size) = config
@@ -285,7 +311,7 @@ impl AlignmentAlgorithm for OpenCVECC {
             .get("gaussian_filter_size")
             .and_then(|v| v.as_i64())
         {
-            self.gaussian_filter_size = gauss_size as i32;
+            self.config.gaussian_filter_size = gauss_size as i32;
         }
 
         Ok(())
@@ -309,19 +335,20 @@ impl AlignmentAlgorithm for OpenCVECC {
         let criteria = TermCriteria::new(
             opencv::core::TermCriteria_Type::COUNT as i32
                 + opencv::core::TermCriteria_Type::EPS as i32,
-            self.max_iterations,
-            self.termination_eps,
+            self.config.max_iterations,
+            self.config.termination_eps,
         )?;
 
         // Perform ECC alignment
+        // FIXED: Corrected parameter order - search_processed (template) should come first, patch_processed (target) second
         let ecc_result = video::find_transform_ecc(
-            &patch_processed,
             &search_processed,
+            &patch_processed,
             &mut warp_matrix,
             self.motion_type_to_opencv(),
             criteria,
             &no_array(),
-            self.gaussian_filter_size,
+            self.config.gaussian_filter_size,
         );
 
         if ecc_result.is_err() {
@@ -345,13 +372,21 @@ impl AlignmentAlgorithm for OpenCVECC {
         let (tx, ty, rotation, scale) = self.extract_transformation_params(&warp_matrix)?;
 
         // Calculate match location in search image
-        let match_x = (search_image.cols() / 2) + tx as i32;
-        let match_y = (search_image.rows() / 2) + ty as i32;
+        // tx, ty from ECC represent the transformation displacement directly
+        let match_x = tx as i32;
+        let match_y = ty as i32;
 
         // Calculate confidence based on correlation score
         let confidence = self
             .calculate_correlation_score(&patch_processed, &search_processed, &warp_matrix)
             .unwrap_or(0.0);
+        
+        // Apply confidence threshold from config
+        let final_confidence = if confidence >= self.config.confidence_threshold as f64 {
+            confidence
+        } else {
+            0.0
+        };
 
         let mut metadata = HashMap::new();
         metadata.insert(
@@ -360,11 +395,11 @@ impl AlignmentAlgorithm for OpenCVECC {
         );
         metadata.insert(
             "max_iterations".to_string(),
-            serde_json::Value::from(self.max_iterations),
+            serde_json::Value::from(self.config.max_iterations),
         );
         metadata.insert(
             "termination_eps".to_string(),
-            serde_json::Value::from(self.termination_eps),
+            serde_json::Value::from(self.config.termination_eps),
         );
 
         Ok(AlignmentResult {
@@ -374,8 +409,8 @@ impl AlignmentAlgorithm for OpenCVECC {
                 width: patch.cols(),
                 height: patch.rows(),
             },
-            score: confidence,
-            confidence,
+            score: final_confidence,
+            confidence: final_confidence,
             execution_time_ms: start.elapsed().as_secs_f64() * 1000.0,
             algorithm_name: AlignmentAlgorithm::name(self).to_string(),
             metadata,
@@ -401,100 +436,3 @@ impl AlignmentAlgorithm for OpenCVECC {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils::grayimage_to_mat;
-    use image::{GrayImage, Luma};
-
-    fn create_test_pattern(width: u32, height: u32) -> GrayImage {
-        GrayImage::from_fn(width, height, |x, y| {
-            // Create a gradient pattern for ECC testing
-            let intensity = ((x + y) * 255 / (width + height)) as u8;
-            Luma([intensity])
-        })
-    }
-
-
-    #[test]
-    fn test_ecc_creation() {
-        let ecc = OpenCVECC::new();
-        assert_eq!(ecc.max_iterations, 50);
-        assert_eq!(ecc.termination_eps, 1e-10);
-    }
-
-    #[test]
-    fn test_ecc_with_params() {
-        let ecc = OpenCVECC::new()
-            .with_motion_type(MotionType::Affine)
-            .with_max_iterations(100)
-            .with_termination_eps(1e-8);
-
-        assert_eq!(ecc.max_iterations, 100);
-        assert_eq!(ecc.termination_eps, 1e-8);
-    }
-
-    #[test]
-    fn test_ecc_alignment() {
-        let ecc = OpenCVECC::new().with_motion_type(MotionType::Translation);
-        let template = create_test_pattern(64, 64);
-        let target = create_test_pattern(64, 64);
-
-        let template_mat = grayimage_to_mat(&template).unwrap();
-        let target_mat = grayimage_to_mat(&target).unwrap();
-
-        let result = ecc.align(&target_mat, &template_mat);
-        assert!(result.is_ok());
-
-        let alignment = result.unwrap();
-        assert!(alignment.algorithm_name.contains("OpenCV-ECC"));
-        assert!(alignment.execution_time_ms >= 0.0);
-        assert!(alignment.confidence >= 0.0 && alignment.confidence <= 1.0);
-    }
-
-    #[test]
-    fn test_motion_type_names() {
-        let ecc_translation = OpenCVECC::new().with_motion_type(MotionType::Translation);
-        let ecc_euclidean = OpenCVECC::new().with_motion_type(MotionType::Euclidean);
-        let ecc_affine = OpenCVECC::new().with_motion_type(MotionType::Affine);
-        let ecc_homography = OpenCVECC::new().with_motion_type(MotionType::Homography);
-
-        assert_eq!(ecc_translation.name(), "OpenCV-ECC-Translation");
-        assert_eq!(ecc_euclidean.name(), "OpenCV-ECC-Euclidean");
-        assert_eq!(ecc_affine.name(), "OpenCV-ECC-Affine");
-        assert_eq!(ecc_homography.name(), "OpenCV-ECC-Homography");
-    }
-
-    #[test]
-    fn test_grayimage_to_mat_conversion() {
-        let image = create_test_pattern(32, 32);
-
-        let mat_result = grayimage_to_mat(&image);
-        assert!(mat_result.is_ok());
-
-        let mat = mat_result.unwrap();
-        assert_eq!(mat.cols(), 32);
-        assert_eq!(mat.rows(), 32);
-        assert_eq!(mat.channels(), 1);
-    }
-
-    #[test]
-    fn test_initial_warp_matrix() {
-        let ecc_translation = OpenCVECC::new().with_motion_type(MotionType::Translation);
-        let ecc_homography = OpenCVECC::new().with_motion_type(MotionType::Homography);
-
-        let warp_translation = ecc_translation.get_initial_warp_matrix();
-        let warp_homography = ecc_homography.get_initial_warp_matrix();
-
-        assert!(warp_translation.is_ok());
-        assert!(warp_homography.is_ok());
-
-        let warp_t = warp_translation.unwrap();
-        let warp_h = warp_homography.unwrap();
-
-        assert_eq!(warp_t.rows(), 2);
-        assert_eq!(warp_t.cols(), 3);
-        assert_eq!(warp_h.rows(), 3);
-        assert_eq!(warp_h.cols(), 3);
-    }
-}

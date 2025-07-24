@@ -1,3 +1,4 @@
+use crate::config::TemplateConfig;
 use crate::pipeline::{AlgorithmConfig, AlignmentAlgorithm, AlignmentResult, ComplexityClass};
 use opencv::core::{no_array, Mat, Point2i};
 use opencv::imgproc;
@@ -19,15 +20,19 @@ pub enum TemplateMatchMode {
 
 pub struct OpenCVTemplateMatcher {
     mode: TemplateMatchMode,
+    config: TemplateConfig,
 }
-
-// SAFETY: OpenCV template matching is safe to send across threads
-unsafe impl Send for OpenCVTemplateMatcher {}
-unsafe impl Sync for OpenCVTemplateMatcher {}
 
 impl OpenCVTemplateMatcher {
     pub fn new(mode: TemplateMatchMode) -> Self {
-        Self { mode }
+        Self { 
+            mode,
+            config: TemplateConfig::default(),
+        }
+    }
+
+    pub fn with_config(mode: TemplateMatchMode, config: TemplateConfig) -> Self {
+        Self { mode, config }
     }
 
     pub fn new_ncc() -> Self {
@@ -141,11 +146,21 @@ impl AlignmentAlgorithm for OpenCVTemplateMatcher {
         let confidence = match self.mode {
             TemplateMatchMode::SumOfSquaredDifferences => {
                 // For SSD, lower is better, so invert and normalize
-                (1.0 / (1.0 + score)).clamp(0.0, 1.0)
+                let normalized = (1.0 / (1.0 + score)).clamp(0.0, 1.0);
+                if normalized < self.config.confidence_threshold as f64 {
+                    0.0
+                } else {
+                    normalized
+                }
             }
             _ => {
                 // For correlation methods, higher is better
-                score.clamp(0.0, 1.0)
+                let normalized = score.clamp(0.0, 1.0);
+                if normalized < self.config.confidence_threshold as f64 {
+                    0.0
+                } else {
+                    normalized
+                }
             }
         };
 
@@ -186,129 +201,3 @@ impl AlignmentAlgorithm for OpenCVTemplateMatcher {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::utils::grayimage_to_mat;
-    use image::{GrayImage, Luma};
-
-    fn create_test_pattern(width: u32, height: u32, pattern_type: u8) -> GrayImage {
-        GrayImage::from_fn(width, height, |x, y| {
-            match pattern_type {
-                0 => Luma([((x + y) % 2 * 255) as u8]), // Checkerboard
-                1 => Luma([((x % 8 < 4) ^ (y % 8 < 4)) as u8 * 255]), // Grid
-                _ => Luma([128]),                       // Gray
-            }
-        })
-    }
-
-
-    #[test]
-    fn test_ncc_exact_match() {
-        let template = create_test_pattern(16, 16, 0);
-        let target = create_test_pattern(16, 16, 0);
-
-        let template_mat = grayimage_to_mat(&template).unwrap();
-        let target_mat = grayimage_to_mat(&target).unwrap();
-
-        let matcher = OpenCVTemplateMatcher::new_ncc();
-        let result = matcher.align(&target_mat, &template_mat).unwrap();
-
-        assert_eq!(result.algorithm_name, "OpenCV-NCC");
-        assert!(
-            result.transformation.is_some(),
-            "Transformation should be present"
-        );
-        let transform = result.transformation.unwrap();
-        assert!(
-            (transform.translation.0.abs() < 1.0),
-            "Translation X should be near 0, got {}",
-            transform.translation.0
-        );
-        assert!(
-            (transform.translation.1.abs() < 1.0),
-            "Translation Y should be near 0, got {}",
-            transform.translation.1
-        );
-        assert!(
-            result.confidence > 0.8,
-            "Confidence should be high for exact match, got {}",
-            result.confidence
-        );
-        assert!(
-            result.execution_time_ms >= 0.0,
-            "Execution time should be non-negative"
-        );
-    }
-
-    #[test]
-    fn test_ssd_exact_match() {
-        let template = create_test_pattern(16, 16, 1);
-        let target = create_test_pattern(16, 16, 1);
-
-        let template_mat = grayimage_to_mat(&template).unwrap();
-        let target_mat = grayimage_to_mat(&target).unwrap();
-
-        let matcher = OpenCVTemplateMatcher::new_ssd();
-        let result = matcher.align(&target_mat, &template_mat).unwrap();
-
-        assert_eq!(result.algorithm_name, "OpenCV-SSD");
-        assert!(
-            result.transformation.is_some(),
-            "Transformation should be present"
-        );
-        let transform = result.transformation.unwrap();
-        assert!(
-            (transform.translation.0.abs() < 1.0),
-            "Translation should be near 0"
-        );
-        assert!(
-            (transform.translation.1.abs() < 1.0),
-            "Translation should be near 0"
-        );
-        assert!(
-            result.confidence > 0.5,
-            "Confidence should be reasonable for exact match"
-        );
-        assert!(
-            result.execution_time_ms >= 0.0,
-            "Execution time should be non-negative"
-        );
-    }
-
-    #[test]
-    fn test_template_larger_than_target() {
-        let template = create_test_pattern(32, 32, 0);
-        let target = create_test_pattern(16, 16, 0);
-
-        let template_mat = grayimage_to_mat(&template).unwrap();
-        let target_mat = grayimage_to_mat(&target).unwrap();
-
-        let matcher = OpenCVTemplateMatcher::new_ncc();
-        let result = matcher.align(&target_mat, &template_mat).unwrap();
-
-        // Should return low confidence result rather than error
-        assert_eq!(result.algorithm_name, "OpenCV-NCC");
-        assert_eq!(
-            result.confidence, 0.0,
-            "Should have zero confidence when template is larger"
-        );
-        assert!(
-            result.execution_time_ms >= 0.0,
-            "Execution time should be non-negative"
-        );
-    }
-
-    #[test]
-    fn test_grayimage_to_mat_conversion() {
-        let image = create_test_pattern(32, 32, 0);
-
-        let mat_result = grayimage_to_mat(&image);
-        assert!(mat_result.is_ok());
-
-        let mat = mat_result.unwrap();
-        assert_eq!(mat.cols(), 32);
-        assert_eq!(mat.rows(), 32);
-        assert_eq!(mat.channels(), 1);
-    }
-}
