@@ -1,12 +1,15 @@
 pub mod algorithms;
-pub mod data;
 pub mod analysis;
-pub mod visualization;
+pub mod augmentation;
 pub mod dashboard;
+pub mod data;
+pub mod pipeline;
+pub mod utils;
+pub mod visualization;
 
 pub use algorithms::*;
-pub use data::*;
 pub use analysis::*;
+pub use data::*;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlignmentResult {

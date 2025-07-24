@@ -1,7 +1,8 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use anyhow::Result;
+use crate::pipeline::{AlignmentResult as PipelineAlignmentResult};
 
 /// Dashboard data structures for organizing test results
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +32,7 @@ pub struct TestResult {
     pub original_image_path: String,
     pub patch_info: PatchInfo,
     pub transformation_applied: TransformationInfo,
-    pub alignment_result: AlignmentResult,
+    pub alignment_result: PipelineAlignmentResult,
     pub visual_outputs: VisualOutputs,
     pub performance_metrics: PerformanceMetrics,
 }
@@ -53,15 +54,7 @@ pub struct TransformationInfo {
     pub transformed_patch_path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AlignmentResult {
-    pub translation: (f32, f32),
-    pub rotation: f32,
-    pub scale: f32,
-    pub confidence: f32,
-    pub processing_time_ms: f32,
-    pub algorithm_used: String,
-}
+// AlignmentResult is now imported from pipeline module
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisualOutputs {
@@ -115,7 +108,7 @@ impl DashboardDataLoader {
             for entry in std::fs::read_dir(&self.results_dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                
+
                 if path.is_dir() {
                     if let Some(session_name) = path.file_name().and_then(|n| n.to_str()) {
                         if session_name.starts_with("test") {
@@ -123,9 +116,13 @@ impl DashboardDataLoader {
                                 // Collect unique values
                                 for test in &session.test_results {
                                     all_algorithms.insert(test.algorithm_name.clone());
-                                    all_patch_sizes.insert(format!("{}x{}", 
-                                        test.patch_info.size.0, test.patch_info.size.1));
-                                    all_transformations.insert(test.transformation_applied.noise_parameters.clone());
+                                    all_patch_sizes.insert(format!(
+                                        "{}x{}",
+                                        test.patch_info.size.0, test.patch_info.size.1
+                                    ));
+                                    all_transformations.insert(
+                                        test.transformation_applied.noise_parameters.clone(),
+                                    );
                                 }
                                 test_sessions.push(session);
                             }
@@ -149,12 +146,12 @@ impl DashboardDataLoader {
     /// Load a single test session from a directory
     fn load_test_session(&self, session_dir: &Path, session_name: &str) -> Result<TestSession> {
         let mut test_results = Vec::new();
-        
+
         // Find all test_report.json files in subdirectories
         for entry in std::fs::read_dir(session_dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_dir() {
                 let report_path = path.join("test_report.json");
                 if report_path.exists() {
@@ -168,28 +165,44 @@ impl DashboardDataLoader {
 
         // Calculate session statistics
         let total_tests = test_results.len();
-        let success_count = test_results.iter().filter(|t| t.performance_metrics.success).count();
-        let success_rate = if total_tests > 0 { 
-            success_count as f32 / total_tests as f32 * 100.0 
-        } else { 
-            0.0 
+        let success_count = test_results
+            .iter()
+            .filter(|t| t.performance_metrics.success)
+            .count();
+        let success_rate = if total_tests > 0 {
+            success_count as f32 / total_tests as f32 * 100.0
+        } else {
+            0.0
         };
         let avg_processing_time = if total_tests > 0 {
-            test_results.iter().map(|t| t.performance_metrics.processing_time_ms).sum::<f32>() / total_tests as f32
+            test_results
+                .iter()
+                .map(|t| t.alignment_result.execution_time_ms as f32)
+                .sum::<f32>()
+                / total_tests as f32
         } else {
             0.0
         };
 
         // Get SEM image path from first test result
-        let sem_image_path = test_results.first()
+        let sem_image_path = test_results
+            .first()
             .map(|t| t.original_image_path.clone())
             .unwrap_or_default();
 
         // Get creation time from directory metadata or use current time
         let created_at = std::fs::metadata(session_dir)
             .and_then(|m| m.created())
-            .map(|t| chrono::DateTime::<chrono::Utc>::from(t).format("%Y-%m-%d %H:%M:%S UTC").to_string())
-            .unwrap_or_else(|_| chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string());
+            .map(|t| {
+                chrono::DateTime::<chrono::Utc>::from(t)
+                    .format("%Y-%m-%d %H:%M:%S UTC")
+                    .to_string()
+            })
+            .unwrap_or_else(|_| {
+                chrono::Utc::now()
+                    .format("%Y-%m-%d %H:%M:%S UTC")
+                    .to_string()
+            });
 
         Ok(TestSession {
             id: session_name.to_string(),
@@ -206,52 +219,83 @@ impl DashboardDataLoader {
     /// Calculate algorithm performance summaries across all sessions
     pub fn calculate_algorithm_summaries(&self, data: &DashboardData) -> Vec<AlgorithmSummary> {
         let mut algorithm_stats: HashMap<String, Vec<&TestResult>> = HashMap::new();
-        
+
         // Group all test results by algorithm
         for session in &data.test_sessions {
             for test in &session.test_results {
-                algorithm_stats.entry(test.algorithm_name.clone())
-                    .or_insert_with(Vec::new)
+                algorithm_stats
+                    .entry(test.algorithm_name.clone())
+                    .or_default()
                     .push(test);
             }
         }
 
         // Calculate summaries
-        algorithm_stats.into_iter().map(|(name, tests)| {
-            let total_tests = tests.len();
-            let success_count = tests.iter().filter(|t| t.performance_metrics.success).count();
-            let success_rate = if total_tests > 0 { 
-                success_count as f32 / total_tests as f32 * 100.0 
-            } else { 
-                0.0 
-            };
+        algorithm_stats
+            .into_iter()
+            .map(|(name, tests)| {
+                let total_tests = tests.len();
+                let success_count = tests
+                    .iter()
+                    .filter(|t| t.performance_metrics.success)
+                    .count();
+                let success_rate = if total_tests > 0 {
+                    success_count as f32 / total_tests as f32 * 100.0
+                } else {
+                    0.0
+                };
 
-            let avg_translation_error = if total_tests > 0 {
-                tests.iter().map(|t| t.performance_metrics.translation_error_px).sum::<f32>() / total_tests as f32
-            } else { 0.0 };
+                let avg_translation_error = if total_tests > 0 {
+                    tests
+                        .iter()
+                        .map(|t| t.performance_metrics.translation_error_px)
+                        .sum::<f32>()
+                        / total_tests as f32
+                } else {
+                    0.0
+                };
 
-            let avg_rotation_error = if total_tests > 0 {
-                tests.iter().map(|t| t.performance_metrics.rotation_error_deg).sum::<f32>() / total_tests as f32
-            } else { 0.0 };
+                let avg_rotation_error = if total_tests > 0 {
+                    tests
+                        .iter()
+                        .map(|t| t.performance_metrics.rotation_error_deg)
+                        .sum::<f32>()
+                        / total_tests as f32
+                } else {
+                    0.0
+                };
 
-            let avg_processing_time = if total_tests > 0 {
-                tests.iter().map(|t| t.performance_metrics.processing_time_ms).sum::<f32>() / total_tests as f32
-            } else { 0.0 };
+                let avg_processing_time = if total_tests > 0 {
+                    tests
+                        .iter()
+                        .map(|t| t.alignment_result.execution_time_ms as f32)
+                        .sum::<f32>()
+                        / total_tests as f32
+                } else {
+                    0.0
+                };
 
-            let avg_confidence = if total_tests > 0 {
-                tests.iter().map(|t| t.performance_metrics.confidence_score).sum::<f32>() / total_tests as f32
-            } else { 0.0 };
+                let avg_confidence = if total_tests > 0 {
+                    tests
+                        .iter()
+                        .map(|t| t.alignment_result.confidence as f32)
+                        .sum::<f32>()
+                        / total_tests as f32
+                } else {
+                    0.0
+                };
 
-            AlgorithmSummary {
-                name,
-                total_tests,
-                success_count,
-                success_rate,
-                avg_translation_error,
-                avg_rotation_error,
-                avg_processing_time,
-                avg_confidence,
-            }
-        }).collect()
+                AlgorithmSummary {
+                    name,
+                    total_tests,
+                    success_count,
+                    success_rate,
+                    avg_translation_error,
+                    avg_rotation_error,
+                    avg_processing_time,
+                    avg_confidence,
+                }
+            })
+            .collect()
     }
 }

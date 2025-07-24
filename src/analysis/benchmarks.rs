@@ -1,6 +1,6 @@
-use crate::{AlignmentResult, algorithms::AlignmentAlgorithm};
-use image::GrayImage;
+use crate::pipeline::AlignmentAlgorithm;
 use instant::Instant;
+use opencv::core::Mat;
 
 pub struct BenchmarkRunner {
     pub algorithms: Vec<Box<dyn AlignmentAlgorithm>>,
@@ -23,14 +23,18 @@ impl BenchmarkRunner {
         self.algorithms.push(algorithm);
     }
 
-    pub fn run_benchmark(&self, template: &GrayImage, target: &GrayImage) -> Vec<AlignmentResult> {
+    pub fn run_benchmark(
+        &self,
+        template: &Mat,
+        target: &Mat,
+    ) -> Vec<crate::pipeline::AlignmentResult> {
         let mut results = Vec::new();
-        
+
         for algorithm in &self.algorithms {
             let start = Instant::now();
             match algorithm.align(template, target) {
                 Ok(mut result) => {
-                    result.processing_time_ms = start.elapsed().as_millis() as f32;
+                    result.execution_time_ms = start.elapsed().as_millis() as f64;
                     results.push(result);
                 }
                 Err(e) => {
@@ -38,7 +42,7 @@ impl BenchmarkRunner {
                 }
             }
         }
-        
+
         results
     }
 }

@@ -2,134 +2,118 @@ use crate::pipeline::{AlgorithmConfig, AlignmentAlgorithm, AlignmentResult, Comp
 use crate::utils::estimate_transformation_ransac;
 use crate::Result;
 use opencv::core::{no_array, DMatch, KeyPoint, Mat, Ptr};
-use opencv::features2d::{BFMatcher, ORB_ScoreType, ORB};
+use opencv::features2d::{BFMatcher, SIFT};
 use opencv::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// ORB (Oriented FAST and Rotated BRIEF) feature detector and matcher
-/// ORB is efficient and provides good performance for real-time applications
-pub struct OpenCVORB {
-    detector: RefCell<Ptr<ORB>>,
+/// SIFT (Scale-Invariant Feature Transform) feature detector and matcher
+/// SIFT is highly robust to scale, rotation, and illumination changes
+pub struct OpenCVSIFT {
+    detector: RefCell<Ptr<SIFT>>,
     matcher: RefCell<Ptr<BFMatcher>>,
-    max_features: i32,
-    scale_factor: f32,
-    n_levels: i32,
-    edge_threshold: i32,
-    first_level: i32,
-    wta_k: i32,
-    score_type: ORB_ScoreType,
-    patch_size: i32,
-    fast_threshold: i32,
+    n_features: i32,
+    n_octave_layers: i32,
+    contrast_threshold: f64,
+    edge_threshold: f64,
+    sigma: f64,
+    max_features: usize,
 }
 
 // SAFETY: OpenCV types are safe to send across threads when used properly
-unsafe impl Send for OpenCVORB {}
-unsafe impl Sync for OpenCVORB {}
+unsafe impl Send for OpenCVSIFT {}
+unsafe impl Sync for OpenCVSIFT {}
 
-impl Default for OpenCVORB {
+impl Default for OpenCVSIFT {
     fn default() -> Self {
-        Self::new().expect("Failed to create ORB")
+        Self::new().expect("Failed to create SIFT")
     }
 }
 
-impl OpenCVORB {
+impl OpenCVSIFT {
     pub fn new() -> Result<Self> {
-        let detector = ORB::create(
-            500,                         // nfeatures
-            1.2,                         // scaleFactor
-            8,                           // nlevels
-            31,                          // edgeThreshold
-            0,                           // firstLevel
-            2,                           // WTA_K
-            ORB_ScoreType::HARRIS_SCORE, // scoreType
-            31,                          // patchSize
-            20,                          // fastThreshold
+        let detector = SIFT::create(
+            0,     // nfeatures (0 = no limit)
+            3,     // nOctaveLayers
+            0.04,  // contrastThreshold
+            10.0,  // edgeThreshold
+            1.6,   // sigma
+            false, // enable_precise_upscale
         )?;
 
         let matcher = BFMatcher::create(
-            opencv::core::NORM_HAMMING, // norm type for binary descriptors
-            true,                       // cross check
+            opencv::core::NORM_L2, // norm type for float descriptors
+            true,                  // cross check
         )?;
 
         Ok(Self {
             detector: RefCell::new(detector),
             matcher: RefCell::new(matcher),
-            max_features: 500,
-            scale_factor: 1.2,
-            n_levels: 8,
-            edge_threshold: 31,
-            first_level: 0,
-            wta_k: 2,
-            score_type: ORB_ScoreType::HARRIS_SCORE,
-            patch_size: 31,
-            fast_threshold: 20,
+            n_features: 0,
+            n_octave_layers: 3,
+            contrast_threshold: 0.04,
+            edge_threshold: 10.0,
+            sigma: 1.6,
+            max_features: 1000,
         })
     }
 
-    pub fn with_max_features(mut self, max_features: i32) -> Result<Self> {
-        self.max_features = max_features;
-        *self.detector.borrow_mut() = ORB::create(
-            max_features,
-            self.scale_factor,
-            self.n_levels,
+    pub fn with_n_features(mut self, n_features: i32) -> Result<Self> {
+        self.n_features = n_features;
+        *self.detector.borrow_mut() = SIFT::create(
+            n_features,
+            self.n_octave_layers,
+            self.contrast_threshold,
             self.edge_threshold,
-            self.first_level,
-            self.wta_k,
-            self.score_type,
-            self.patch_size,
-            self.fast_threshold,
+            self.sigma,
+            false,
         )?;
         Ok(self)
     }
 
-    pub fn with_scale_factor(mut self, scale_factor: f32) -> Result<Self> {
-        self.scale_factor = scale_factor;
-        *self.detector.borrow_mut() = ORB::create(
-            self.max_features,
-            scale_factor,
-            self.n_levels,
-            self.edge_threshold,
-            self.first_level,
-            self.wta_k,
-            self.score_type,
-            self.patch_size,
-            self.fast_threshold,
-        )?;
-        Ok(self)
-    }
-
-    pub fn with_n_levels(mut self, n_levels: i32) -> Result<Self> {
-        self.n_levels = n_levels;
-        *self.detector.borrow_mut() = ORB::create(
-            self.max_features,
-            self.scale_factor,
-            n_levels,
-            self.edge_threshold,
-            self.first_level,
-            self.wta_k,
-            self.score_type,
-            self.patch_size,
-            self.fast_threshold,
-        )?;
-        Ok(self)
-    }
-
-    pub fn with_fast_threshold(mut self, threshold: i32) -> Result<Self> {
-        self.fast_threshold = threshold;
-        *self.detector.borrow_mut() = ORB::create(
-            self.max_features,
-            self.scale_factor,
-            self.n_levels,
-            self.edge_threshold,
-            self.first_level,
-            self.wta_k,
-            self.score_type,
-            self.patch_size,
+    pub fn with_contrast_threshold(mut self, threshold: f64) -> Result<Self> {
+        self.contrast_threshold = threshold;
+        *self.detector.borrow_mut() = SIFT::create(
+            self.n_features,
+            self.n_octave_layers,
             threshold,
+            self.edge_threshold,
+            self.sigma,
+            false,
         )?;
         Ok(self)
+    }
+
+    pub fn with_edge_threshold(mut self, threshold: f64) -> Result<Self> {
+        self.edge_threshold = threshold;
+        *self.detector.borrow_mut() = SIFT::create(
+            self.n_features,
+            self.n_octave_layers,
+            self.contrast_threshold,
+            threshold,
+            self.sigma,
+            false,
+        )?;
+        Ok(self)
+    }
+
+    pub fn with_sigma(mut self, sigma: f64) -> Result<Self> {
+        self.sigma = sigma;
+        *self.detector.borrow_mut() = SIFT::create(
+            self.n_features,
+            self.n_octave_layers,
+            self.contrast_threshold,
+            self.edge_threshold,
+            sigma,
+            false,
+        )?;
+        Ok(self)
+    }
+
+    pub fn with_max_features(mut self, max_features: usize) -> Self {
+        self.max_features = max_features;
+        self
     }
 
     fn detect_and_compute(&self, image: &Mat) -> Result<(opencv::core::Vector<KeyPoint>, Mat)> {
@@ -144,6 +128,36 @@ impl OpenCVORB {
             false,
         )?;
 
+        // Limit number of features if specified
+        if keypoints.len() > self.max_features {
+            // Sort by response (strength) and keep the best
+            let mut kp_vec: Vec<KeyPoint> = keypoints.to_vec();
+            kp_vec.sort_by(|a, b| {
+                b.response()
+                    .partial_cmp(&a.response())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            kp_vec.truncate(self.max_features);
+
+            keypoints = opencv::core::Vector::from_iter(kp_vec);
+
+            // Extract corresponding descriptors
+            let mut limited_descriptors = Mat::zeros(
+                self.max_features as i32,
+                descriptors.cols(),
+                descriptors.typ(),
+            )?
+            .to_mat()?;
+
+            for i in 0..self.max_features.min(descriptors.rows() as usize) {
+                let src_row = descriptors.row(i as i32)?;
+                let dst_row = limited_descriptors.row_mut(i as i32)?;
+                src_row.copy_to(&mut dst_row.clone_pointee())?;
+            }
+
+            descriptors = limited_descriptors;
+        }
+
         Ok((keypoints, descriptors))
     }
 
@@ -154,28 +168,24 @@ impl OpenCVORB {
             return Ok(Vec::new());
         }
 
+        // Use simple match instead of knnMatch to avoid the batch distance issue
         self.matcher
-            .borrow()
+            .borrow_mut()
             .train_match(desc1, desc2, &mut matches, &no_array())?;
 
-        // Apply ratio test for better matches
-        let mut good_matches = Vec::new();
-        let matches_vec = matches.to_vec();
+        // Filter matches by distance threshold since we're using simple matching
+        let mut good_matches = matches.to_vec();
 
-        // Sort by distance and keep good matches
-        for m in matches_vec {
-            if m.distance < 50.0 {
-                // Hamming distance threshold for binary descriptors
-                good_matches.push(m);
-            }
-        }
-
-        // Sort by distance and limit to top matches
+        // Sort by distance and keep the best matches
         good_matches.sort_by(|a, b| {
             a.distance
                 .partial_cmp(&b.distance)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+
+        // Keep matches with distance below threshold
+        let distance_threshold = 100.0; // Adjust this threshold as needed
+        good_matches.retain(|m| m.distance < distance_threshold);
         good_matches.truncate(100); // Limit to top 100 matches
 
         Ok(good_matches)
@@ -192,45 +202,49 @@ impl OpenCVORB {
     }
 }
 
-impl AlignmentAlgorithm for OpenCVORB {
+impl AlignmentAlgorithm for OpenCVSIFT {
     fn name(&self) -> &str {
-        "OpenCV-ORB"
+        "OpenCV-SIFT"
     }
 
     fn configure(&mut self, config: &AlgorithmConfig) -> crate::Result<()> {
+        if let Some(n_features) = config.parameters.get("n_features").and_then(|v| v.as_i64()) {
+            *self = std::mem::take(self).with_n_features(n_features as i32)?;
+        }
+
+        if let Some(contrast_threshold) = config
+            .parameters
+            .get("contrast_threshold")
+            .and_then(|v| v.as_f64())
+        {
+            *self = std::mem::take(self).with_contrast_threshold(contrast_threshold)?;
+        }
+
+        if let Some(edge_threshold) = config
+            .parameters
+            .get("edge_threshold")
+            .and_then(|v| v.as_f64())
+        {
+            *self = std::mem::take(self).with_edge_threshold(edge_threshold)?;
+        }
+
+        if let Some(sigma) = config.parameters.get("sigma").and_then(|v| v.as_f64()) {
+            *self = std::mem::take(self).with_sigma(sigma)?;
+        }
+
         if let Some(max_features) = config
             .parameters
             .get("max_features")
-            .and_then(|v| v.as_i64())
+            .and_then(|v| v.as_u64())
         {
-            *self = std::mem::take(self).with_max_features(max_features as i32)?;
-        }
-
-        if let Some(scale_factor) = config
-            .parameters
-            .get("scale_factor")
-            .and_then(|v| v.as_f64())
-        {
-            *self = std::mem::take(self).with_scale_factor(scale_factor as f32)?;
-        }
-
-        if let Some(n_levels) = config.parameters.get("n_levels").and_then(|v| v.as_i64()) {
-            *self = std::mem::take(self).with_n_levels(n_levels as i32)?;
-        }
-
-        if let Some(fast_threshold) = config
-            .parameters
-            .get("fast_threshold")
-            .and_then(|v| v.as_i64())
-        {
-            *self = std::mem::take(self).with_fast_threshold(fast_threshold as i32)?;
+            *self = std::mem::take(self).with_max_features(max_features as usize);
         }
 
         Ok(())
     }
 
     fn preprocess(&self, image: &Mat) -> crate::Result<Mat> {
-        // ORB works well with the original image, minimal preprocessing needed
+        // SIFT works well with the original image, minimal preprocessing needed
         Ok(image.clone())
     }
 
@@ -301,6 +315,14 @@ impl AlignmentAlgorithm for OpenCVORB {
             "search_keypoints".to_string(),
             serde_json::Value::from(search_kp.len()),
         );
+        metadata.insert(
+            "contrast_threshold".to_string(),
+            serde_json::Value::from(self.contrast_threshold),
+        );
+        metadata.insert(
+            "edge_threshold".to_string(),
+            serde_json::Value::from(self.edge_threshold),
+        );
 
         Ok(AlignmentResult {
             location: crate::pipeline::SerializableRect {
@@ -317,7 +339,7 @@ impl AlignmentAlgorithm for OpenCVORB {
             transformation: Some(crate::pipeline::TransformParams {
                 translation: (tx, ty),
                 rotation_degrees: rotation,
-                scale: 1.0,
+                scale: 1.0, // Will be updated in future versions
                 skew: None,
             }),
         })
@@ -328,7 +350,7 @@ impl AlignmentAlgorithm for OpenCVORB {
     }
 
     fn estimated_complexity(&self) -> ComplexityClass {
-        ComplexityClass::Medium // ORB is reasonably fast
+        ComplexityClass::High // SIFT is computationally expensive but very robust
     }
 }
 
@@ -339,63 +361,63 @@ mod tests {
 
     fn create_test_pattern(width: u32, height: u32) -> GrayImage {
         GrayImage::from_fn(width, height, |x, y| {
-            // Create a pattern with corners and edges for feature detection
-            if (x % 16 < 8) ^ (y % 16 < 8) {
-                Luma([255])
+            // Create a pattern with distinct features for SIFT detection
+            let intensity = if (x % 20 < 10) ^ (y % 20 < 10) {
+                if (x % 40 < 20) ^ (y % 40 < 20) {
+                    255
+                } else {
+                    192
+                }
             } else {
-                Luma([64])
-            }
+                if (x % 40 < 20) ^ (y % 40 < 20) {
+                    128
+                } else {
+                    64
+                }
+            };
+            Luma([intensity])
         })
     }
 
-    fn grayimage_to_mat(image: &GrayImage) -> Result<Mat> {
-        let width = image.width() as i32;
-        let height = image.height() as i32;
 
-        let mut mat = Mat::zeros(height, width, opencv::core::CV_8UC1)?.to_mat()?;
-
-        for y in 0..height {
-            for x in 0..width {
-                let pixel = image.get_pixel(x as u32, y as u32)[0];
-                *mat.at_2d_mut::<u8>(y, x)? = pixel;
-            }
-        }
-
-        Ok(mat)
+    #[test]
+    fn test_sift_creation() {
+        let sift = OpenCVSIFT::new();
+        assert!(sift.is_ok());
     }
 
     #[test]
-    fn test_orb_creation() {
-        let orb = OpenCVORB::new();
-        assert!(orb.is_ok());
-    }
-
-    #[test]
-    fn test_orb_with_params() {
-        let orb = OpenCVORB::new()
+    fn test_sift_with_params() {
+        let sift_result = OpenCVSIFT::new()
             .unwrap()
-            .with_max_features(1000)
+            .with_contrast_threshold(0.03)
             .unwrap()
-            .with_fast_threshold(10);
+            .with_max_features(500);
 
-        assert!(orb.is_ok());
-        assert_eq!(orb.unwrap().max_features, 1000);
+        assert_eq!(sift_result.max_features, 500);
     }
 
     #[test]
-    fn test_orb_alignment() {
-        let orb = OpenCVORB::new().unwrap();
+    fn test_sift_alignment() {
+        let sift = OpenCVSIFT::new().unwrap();
         let template = create_test_pattern(64, 64);
         let target = create_test_pattern(64, 64);
 
-        let template_mat = grayimage_to_mat(&template).unwrap();
-        let target_mat = grayimage_to_mat(&target).unwrap();
+        let template_mat = crate::utils::image_conversion::grayimage_to_mat(&template).unwrap();
+        let target_mat = crate::utils::image_conversion::grayimage_to_mat(&target).unwrap();
 
-        let result = orb.align(&target_mat, &template_mat);
+        let result = sift.align(&target_mat, &template_mat);
+        match &result {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("SIFT alignment failed with error: {}", e);
+                eprintln!("Error details: {:?}", e);
+            }
+        }
         assert!(result.is_ok());
 
         let alignment = result.unwrap();
-        assert_eq!(alignment.algorithm_name, "OpenCV-ORB");
+        assert_eq!(alignment.algorithm_name, "OpenCV-SIFT");
         assert!(alignment.execution_time_ms >= 0.0);
         assert!(alignment.confidence >= 0.0 && alignment.confidence <= 1.0);
     }
@@ -404,7 +426,7 @@ mod tests {
     fn test_grayimage_to_mat_conversion() {
         let image = create_test_pattern(32, 32);
 
-        let mat_result = grayimage_to_mat(&image);
+        let mat_result = crate::utils::image_conversion::grayimage_to_mat(&image);
         assert!(mat_result.is_ok());
 
         let mat = mat_result.unwrap();

@@ -2,50 +2,45 @@ use crate::pipeline::{AlgorithmConfig, AlignmentAlgorithm, AlignmentResult, Comp
 use crate::utils::estimate_transformation_ransac;
 use crate::Result;
 use opencv::core::{no_array, DMatch, KeyPoint, Mat, Ptr};
-use opencv::features2d::{BFMatcher, ORB_ScoreType, ORB};
+use opencv::features2d::{AKAZE_DescriptorType, BFMatcher, KAZE_DiffusivityType, AKAZE};
 use opencv::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// ORB (Oriented FAST and Rotated BRIEF) feature detector and matcher
-/// ORB is efficient and provides good performance for real-time applications
-pub struct OpenCVORB {
-    detector: RefCell<Ptr<ORB>>,
+/// AKAZE (Accelerated-KAZE) feature detector and matcher
+/// AKAZE is robust to rotation and scale changes, making it ideal for alignment tasks
+pub struct OpenCVAKAZE {
+    detector: RefCell<Ptr<AKAZE>>,
     matcher: RefCell<Ptr<BFMatcher>>,
-    max_features: i32,
-    scale_factor: f32,
-    n_levels: i32,
-    edge_threshold: i32,
-    first_level: i32,
-    wta_k: i32,
-    score_type: ORB_ScoreType,
-    patch_size: i32,
-    fast_threshold: i32,
+    threshold: f32,
+    octaves: i32,
+    octave_layers: i32,
+    diffusivity: KAZE_DiffusivityType,
+    max_features: usize,
 }
 
 // SAFETY: OpenCV types are safe to send across threads when used properly
-unsafe impl Send for OpenCVORB {}
-unsafe impl Sync for OpenCVORB {}
+unsafe impl Send for OpenCVAKAZE {}
+unsafe impl Sync for OpenCVAKAZE {}
 
-impl Default for OpenCVORB {
+impl Default for OpenCVAKAZE {
     fn default() -> Self {
-        Self::new().expect("Failed to create ORB")
+        Self::new().expect("Failed to create AKAZE")
     }
 }
 
-impl OpenCVORB {
+impl OpenCVAKAZE {
     pub fn new() -> Result<Self> {
-        let detector = ORB::create(
-            500,                         // nfeatures
-            1.2,                         // scaleFactor
-            8,                           // nlevels
-            31,                          // edgeThreshold
-            0,                           // firstLevel
-            2,                           // WTA_K
-            ORB_ScoreType::HARRIS_SCORE, // scoreType
-            31,                          // patchSize
-            20,                          // fastThreshold
+        let detector = AKAZE::create(
+            AKAZE_DescriptorType::DESCRIPTOR_MLDB,
+            0,        // descriptor size (0 = full)
+            3,        // descriptor channels
+            0.001f32, // threshold
+            4,        // octaves
+            4,        // octave layers
+            KAZE_DiffusivityType::DIFF_PM_G2,
+            -1, // max_points (-1 = no limit)
         )?;
 
         let matcher = BFMatcher::create(
@@ -56,80 +51,47 @@ impl OpenCVORB {
         Ok(Self {
             detector: RefCell::new(detector),
             matcher: RefCell::new(matcher),
-            max_features: 500,
-            scale_factor: 1.2,
-            n_levels: 8,
-            edge_threshold: 31,
-            first_level: 0,
-            wta_k: 2,
-            score_type: ORB_ScoreType::HARRIS_SCORE,
-            patch_size: 31,
-            fast_threshold: 20,
+            threshold: 0.001,
+            octaves: 4,
+            octave_layers: 4,
+            diffusivity: KAZE_DiffusivityType::DIFF_PM_G2,
+            max_features: 1000,
         })
     }
 
-    pub fn with_max_features(mut self, max_features: i32) -> Result<Self> {
-        self.max_features = max_features;
-        *self.detector.borrow_mut() = ORB::create(
-            max_features,
-            self.scale_factor,
-            self.n_levels,
-            self.edge_threshold,
-            self.first_level,
-            self.wta_k,
-            self.score_type,
-            self.patch_size,
-            self.fast_threshold,
-        )?;
-        Ok(self)
-    }
-
-    pub fn with_scale_factor(mut self, scale_factor: f32) -> Result<Self> {
-        self.scale_factor = scale_factor;
-        *self.detector.borrow_mut() = ORB::create(
-            self.max_features,
-            scale_factor,
-            self.n_levels,
-            self.edge_threshold,
-            self.first_level,
-            self.wta_k,
-            self.score_type,
-            self.patch_size,
-            self.fast_threshold,
-        )?;
-        Ok(self)
-    }
-
-    pub fn with_n_levels(mut self, n_levels: i32) -> Result<Self> {
-        self.n_levels = n_levels;
-        *self.detector.borrow_mut() = ORB::create(
-            self.max_features,
-            self.scale_factor,
-            n_levels,
-            self.edge_threshold,
-            self.first_level,
-            self.wta_k,
-            self.score_type,
-            self.patch_size,
-            self.fast_threshold,
-        )?;
-        Ok(self)
-    }
-
-    pub fn with_fast_threshold(mut self, threshold: i32) -> Result<Self> {
-        self.fast_threshold = threshold;
-        *self.detector.borrow_mut() = ORB::create(
-            self.max_features,
-            self.scale_factor,
-            self.n_levels,
-            self.edge_threshold,
-            self.first_level,
-            self.wta_k,
-            self.score_type,
-            self.patch_size,
+    pub fn with_threshold(mut self, threshold: f32) -> Result<Self> {
+        self.threshold = threshold;
+        *self.detector.borrow_mut() = AKAZE::create(
+            AKAZE_DescriptorType::DESCRIPTOR_MLDB,
+            0,
+            3,
             threshold,
+            self.octaves,
+            self.octave_layers,
+            self.diffusivity,
+            -1,
         )?;
         Ok(self)
+    }
+
+    pub fn with_octaves(mut self, octaves: i32) -> Result<Self> {
+        self.octaves = octaves;
+        *self.detector.borrow_mut() = AKAZE::create(
+            AKAZE_DescriptorType::DESCRIPTOR_MLDB,
+            0,
+            3,
+            self.threshold,
+            octaves,
+            self.octave_layers,
+            self.diffusivity,
+            -1,
+        )?;
+        Ok(self)
+    }
+
+    pub fn with_max_features(mut self, max_features: usize) -> Self {
+        self.max_features = max_features;
+        self
     }
 
     fn detect_and_compute(&self, image: &Mat) -> Result<(opencv::core::Vector<KeyPoint>, Mat)> {
@@ -143,6 +105,36 @@ impl OpenCVORB {
             &mut descriptors,
             false,
         )?;
+
+        // Limit number of features if specified
+        if keypoints.len() > self.max_features {
+            // Sort by response (strength) and keep the best
+            let mut kp_vec: Vec<KeyPoint> = keypoints.to_vec();
+            kp_vec.sort_by(|a, b| {
+                b.response()
+                    .partial_cmp(&a.response())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            kp_vec.truncate(self.max_features);
+
+            keypoints = opencv::core::Vector::from_iter(kp_vec);
+
+            // Extract corresponding descriptors
+            let mut limited_descriptors = Mat::zeros(
+                self.max_features as i32,
+                descriptors.cols(),
+                descriptors.typ(),
+            )?
+            .to_mat()?;
+
+            for i in 0..self.max_features.min(descriptors.rows() as usize) {
+                let src_row = descriptors.row(i as i32)?;
+                let dst_row = limited_descriptors.row_mut(i as i32)?;
+                src_row.copy_to(&mut dst_row.clone_pointee())?;
+            }
+
+            descriptors = limited_descriptors;
+        }
 
         Ok((keypoints, descriptors))
     }
@@ -160,23 +152,22 @@ impl OpenCVORB {
 
         // Apply ratio test for better matches
         let mut good_matches = Vec::new();
-        let matches_vec = matches.to_vec();
+        let mut matches_vec = matches.to_vec();
 
-        // Sort by distance and keep good matches
+        // Sort by distance
+        matches_vec.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Keep matches with good distance ratio
         for m in matches_vec {
             if m.distance < 50.0 {
                 // Hamming distance threshold for binary descriptors
                 good_matches.push(m);
             }
         }
-
-        // Sort by distance and limit to top matches
-        good_matches.sort_by(|a, b| {
-            a.distance
-                .partial_cmp(&b.distance)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        good_matches.truncate(100); // Limit to top 100 matches
 
         Ok(good_matches)
     }
@@ -192,45 +183,33 @@ impl OpenCVORB {
     }
 }
 
-impl AlignmentAlgorithm for OpenCVORB {
+impl AlignmentAlgorithm for OpenCVAKAZE {
     fn name(&self) -> &str {
-        "OpenCV-ORB"
+        "OpenCV-AKAZE"
     }
 
     fn configure(&mut self, config: &AlgorithmConfig) -> crate::Result<()> {
+        if let Some(threshold) = config.parameters.get("threshold").and_then(|v| v.as_f64()) {
+            *self = std::mem::take(self).with_threshold(threshold as f32)?;
+        }
+
+        if let Some(octaves) = config.parameters.get("octaves").and_then(|v| v.as_i64()) {
+            *self = std::mem::take(self).with_octaves(octaves as i32)?;
+        }
+
         if let Some(max_features) = config
             .parameters
             .get("max_features")
-            .and_then(|v| v.as_i64())
+            .and_then(|v| v.as_u64())
         {
-            *self = std::mem::take(self).with_max_features(max_features as i32)?;
-        }
-
-        if let Some(scale_factor) = config
-            .parameters
-            .get("scale_factor")
-            .and_then(|v| v.as_f64())
-        {
-            *self = std::mem::take(self).with_scale_factor(scale_factor as f32)?;
-        }
-
-        if let Some(n_levels) = config.parameters.get("n_levels").and_then(|v| v.as_i64()) {
-            *self = std::mem::take(self).with_n_levels(n_levels as i32)?;
-        }
-
-        if let Some(fast_threshold) = config
-            .parameters
-            .get("fast_threshold")
-            .and_then(|v| v.as_i64())
-        {
-            *self = std::mem::take(self).with_fast_threshold(fast_threshold as i32)?;
+            *self = std::mem::take(self).with_max_features(max_features as usize);
         }
 
         Ok(())
     }
 
     fn preprocess(&self, image: &Mat) -> crate::Result<Mat> {
-        // ORB works well with the original image, minimal preprocessing needed
+        // AKAZE works well with the original image, minimal preprocessing needed
         Ok(image.clone())
     }
 
@@ -328,7 +307,7 @@ impl AlignmentAlgorithm for OpenCVORB {
     }
 
     fn estimated_complexity(&self) -> ComplexityClass {
-        ComplexityClass::Medium // ORB is reasonably fast
+        ComplexityClass::Medium // AKAZE is faster than SIFT but slower than simple methods
     }
 }
 
@@ -348,60 +327,48 @@ mod tests {
         })
     }
 
-    fn grayimage_to_mat(image: &GrayImage) -> Result<Mat> {
-        let width = image.width() as i32;
-        let height = image.height() as i32;
 
-        let mut mat = Mat::zeros(height, width, opencv::core::CV_8UC1)?.to_mat()?;
-
-        for y in 0..height {
-            for x in 0..width {
-                let pixel = image.get_pixel(x as u32, y as u32)[0];
-                *mat.at_2d_mut::<u8>(y, x)? = pixel;
-            }
-        }
-
-        Ok(mat)
+    #[test]
+    fn test_akaze_creation() {
+        let akaze = OpenCVAKAZE::new();
+        assert!(akaze.is_ok());
     }
 
     #[test]
-    fn test_orb_creation() {
-        let orb = OpenCVORB::new();
-        assert!(orb.is_ok());
-    }
-
-    #[test]
-    fn test_orb_with_params() {
-        let orb = OpenCVORB::new()
+    fn test_akaze_with_params() {
+        let akaze_result = OpenCVAKAZE::new()
             .unwrap()
-            .with_max_features(1000)
+            .with_threshold(0.002)
             .unwrap()
-            .with_fast_threshold(10);
+            .with_max_features(500);
 
-        assert!(orb.is_ok());
-        assert_eq!(orb.unwrap().max_features, 1000);
+        assert_eq!(akaze_result.max_features, 500);
     }
 
     #[test]
-    fn test_orb_alignment() {
-        let orb = OpenCVORB::new().unwrap();
+    fn test_akaze_alignment() {
+        use crate::utils::grayimage_to_mat;
+        
+        let akaze = OpenCVAKAZE::new().unwrap();
         let template = create_test_pattern(64, 64);
         let target = create_test_pattern(64, 64);
 
         let template_mat = grayimage_to_mat(&template).unwrap();
         let target_mat = grayimage_to_mat(&target).unwrap();
 
-        let result = orb.align(&target_mat, &template_mat);
+        let result = akaze.align(&target_mat, &template_mat);
         assert!(result.is_ok());
 
         let alignment = result.unwrap();
-        assert_eq!(alignment.algorithm_name, "OpenCV-ORB");
+        assert_eq!(alignment.algorithm_name, "OpenCV-AKAZE");
         assert!(alignment.execution_time_ms >= 0.0);
         assert!(alignment.confidence >= 0.0 && alignment.confidence <= 1.0);
     }
 
     #[test]
     fn test_grayimage_to_mat_conversion() {
+        use crate::utils::grayimage_to_mat;
+        
         let image = create_test_pattern(32, 32);
 
         let mat_result = grayimage_to_mat(&image);

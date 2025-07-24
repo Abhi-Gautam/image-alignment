@@ -24,7 +24,7 @@ impl DashboardState {
     pub fn new(results_dir: PathBuf) -> anyhow::Result<Self> {
         let data_loader = DashboardDataLoader::new(results_dir);
         let dashboard_data = data_loader.load_dashboard_data()?;
-        
+
         Ok(Self {
             data_loader,
             dashboard_data: Arc::new(tokio::sync::RwLock::new(dashboard_data)),
@@ -62,7 +62,7 @@ impl DashboardServer {
 
     pub async fn run(self) -> anyhow::Result<()> {
         let static_dir = std::env::current_dir()?.join("src/dashboard/frontend");
-        
+
         let app = Router::new()
             // API routes
             .route("/api/data", get(get_dashboard_data))
@@ -78,23 +78,22 @@ impl DashboardServer {
             .route("/session/:id", get(serve_index))
             // Serve static frontend files
             .nest_service("/static", get_service(ServeDir::new(&static_dir)))
-            .layer(
-                ServiceBuilder::new()
-                    .layer(CorsLayer::permissive())
-            )
+            .layer(ServiceBuilder::new().layer(CorsLayer::permissive()))
             .with_state(self.state);
 
         let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", self.port)).await?;
-        println!("🚀 Dashboard server running on http://localhost:{}", self.port);
+        println!(
+            "🚀 Dashboard server running on http://localhost:{}",
+            self.port
+        );
         println!("📊 Open your browser to view the SEM Image Alignment Dashboard");
-        
+
         axum::serve(listener, app).await?;
         Ok(())
     }
 }
 
 /// API handlers
-
 async fn get_dashboard_data(
     State(state): State<DashboardState>,
     Query(params): Query<FilterParams>,
@@ -116,7 +115,7 @@ async fn get_test_session(
     Path(session_id): Path<String>,
 ) -> Result<Json<TestSession>, StatusCode> {
     let data = state.dashboard_data.read().await;
-    
+
     if let Some(session) = data.test_sessions.iter().find(|s| s.id == session_id) {
         Ok(Json(session.clone()))
     } else {
@@ -147,7 +146,7 @@ async fn serve_image(
 ) -> Result<Response, StatusCode> {
     // Security: ensure path doesn't escape results directory
     let safe_path = image_path.replace("..", "");
-    
+
     // Handle both absolute paths and relative paths
     let full_path = if safe_path.starts_with("results/") {
         // Path is already relative to project root, use as-is
@@ -156,16 +155,16 @@ async fn serve_image(
         // Path is relative to results directory
         state.data_loader.results_dir.join(&safe_path)
     };
-    
+
     // Security check: ensure path is within allowed directories
     let current_dir = std::env::current_dir().unwrap_or_default();
     let results_dir = current_dir.join("results");
     let datasets_dir = current_dir.join("datasets");
-    
-    let path_is_safe = full_path.starts_with(&results_dir) || 
-                      full_path.starts_with(&datasets_dir) ||
-                      full_path.starts_with(&state.data_loader.results_dir);
-    
+
+    let path_is_safe = full_path.starts_with(&results_dir)
+        || full_path.starts_with(&datasets_dir)
+        || full_path.starts_with(&state.data_loader.results_dir);
+
     if !full_path.exists() || !path_is_safe {
         eprintln!("Image not found or unsafe path: {}", full_path.display());
         return Err(StatusCode::NOT_FOUND);
@@ -176,11 +175,8 @@ async fn serve_image(
             let mime_type = mime_guess::from_path(&full_path)
                 .first_or_octet_stream()
                 .to_string();
-            
-            Ok((
-                [(header::CONTENT_TYPE, mime_type)],
-                contents,
-            ).into_response())
+
+            Ok(([(header::CONTENT_TYPE, mime_type)], contents).into_response())
         }
         Err(e) => {
             eprintln!("Failed to read image file {}: {}", full_path.display(), e);
@@ -196,7 +192,7 @@ async fn serve_index() -> Html<&'static str> {
 /// Filter dashboard data based on query parameters
 fn filter_dashboard_data(data: &DashboardData, params: &FilterParams) -> DashboardData {
     let mut filtered_data = data.clone();
-    
+
     for session in &mut filtered_data.test_sessions {
         session.test_results.retain(|test| {
             // Filter by algorithm
@@ -205,48 +201,58 @@ fn filter_dashboard_data(data: &DashboardData, params: &FilterParams) -> Dashboa
                     return false;
                 }
             }
-            
+
             // Filter by patch size
             if let Some(ref patch_size) = params.patch_size {
-                let test_patch_size = format!("{}x{}", test.patch_info.size.0, test.patch_info.size.1);
+                let test_patch_size =
+                    format!("{}x{}", test.patch_info.size.0, test.patch_info.size.1);
                 if test_patch_size != *patch_size {
                     return false;
                 }
             }
-            
+
             // Filter by transformation
             if let Some(ref transformation) = params.transformation {
                 if test.transformation_applied.noise_parameters != *transformation {
                     return false;
                 }
             }
-            
+
             // Filter by success only
             if let Some(success_only) = params.success_only {
                 if success_only && !test.performance_metrics.success {
                     return false;
                 }
             }
-            
+
             true
         });
-        
+
         // Recalculate session statistics after filtering
         let total_tests = session.test_results.len();
-        let success_count = session.test_results.iter().filter(|t| t.performance_metrics.success).count();
-        session.success_rate = if total_tests > 0 { 
-            success_count as f32 / total_tests as f32 * 100.0 
-        } else { 
-            0.0 
+        let success_count = session
+            .test_results
+            .iter()
+            .filter(|t| t.performance_metrics.success)
+            .count();
+        session.success_rate = if total_tests > 0 {
+            success_count as f32 / total_tests as f32 * 100.0
+        } else {
+            0.0
         };
         session.avg_processing_time = if total_tests > 0 {
-            session.test_results.iter().map(|t| t.performance_metrics.processing_time_ms).sum::<f32>() / total_tests as f32
+            session
+                .test_results
+                .iter()
+                .map(|t| t.performance_metrics.processing_time_ms)
+                .sum::<f32>()
+                / total_tests as f32
         } else {
             0.0
         };
         session.total_tests = total_tests;
     }
-    
+
     filtered_data
 }
 
