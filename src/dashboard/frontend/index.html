@@ -36,13 +36,20 @@
             </div>
         </header>
 
-        <!-- Filters -->
+        <!-- Mode Toggle and Filters/Test Runner -->
         <section class="filters">
             <div class="filters-header">
-                <h3>Filter Results</h3>
+                <div class="mode-toggle">
+                    <button class="btn btn-secondary mode-btn" id="filterModeBtn" onclick="switchToFilterMode()">
+                        Filter Results
+                    </button>
+                    <button class="btn btn-secondary mode-btn active" id="testRunnerModeBtn" onclick="switchToTestRunnerMode()">
+                        Test Runner
+                    </button>
+                </div>
                 <span class="filter-status" id="filterStatus"></span>
             </div>
-            <div class="filter-grid">
+            <div class="filter-grid" style="display: none;">
                 <div class="filter-group">
                     <label for="algorithmFilter">Algorithm</label>
                     <select id="algorithmFilter">
@@ -68,13 +75,84 @@
                     </label>
                 </div>
             </div>
-            <div class="filter-actions">
+            <div class="filter-actions" id="filterActions" style="display: none;">
                 <button class="btn btn-secondary" onclick="clearFilters()">
                     Clear Filters
                 </button>
                 <button class="btn btn-primary" onclick="refreshData()">
                     Refresh
                 </button>
+            </div>
+
+            <!-- Test Runner Section (initially visible) -->
+            <div class="test-runner-section" id="testRunnerSection">
+                <div class="test-runner-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="testSemImage">SEM Image</label>
+                            <input type="file" id="testSemImage" accept=".jpg,.jpeg,.png,.tiff" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="testPatchSizes">Patch Sizes (px)</label>
+                            <div class="multi-select-dropdown">
+                                <div class="multi-select-toggle" onclick="toggleDropdown('patchSizes')">
+                                    <span id="patchSizesText">Select patch sizes...</span>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                <div class="multi-select-options" id="patchSizesDropdown" style="display: none;">
+                                    <label><input type="checkbox" value="32" onchange="updateMultiSelect('patchSizes')"> 32x32</label>
+                                    <label><input type="checkbox" value="64" checked onchange="updateMultiSelect('patchSizes')"> 64x64</label>
+                                    <label><input type="checkbox" value="96" onchange="updateMultiSelect('patchSizes')"> 96x96</label>
+                                    <label><input type="checkbox" value="128" checked onchange="updateMultiSelect('patchSizes')"> 128x128</label>
+                                    <label><input type="checkbox" value="160" onchange="updateMultiSelect('patchSizes')"> 160x160</label>
+                                    <label><input type="checkbox" value="192" onchange="updateMultiSelect('patchSizes')"> 192x192</label>
+                                    <label><input type="checkbox" value="224" onchange="updateMultiSelect('patchSizes')"> 224x224</label>
+                                    <label><input type="checkbox" value="256" onchange="updateMultiSelect('patchSizes')"> 256x256</label>
+                                    <label><input type="checkbox" value="320" onchange="updateMultiSelect('patchSizes')"> 320x320</label>
+                                    <label><input type="checkbox" value="384" onchange="updateMultiSelect('patchSizes')"> 384x384</label>
+                                    <label><input type="checkbox" value="448" onchange="updateMultiSelect('patchSizes')"> 448x448</label>
+                                    <label><input type="checkbox" value="480" onchange="updateMultiSelect('patchSizes')"> 480x480</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="testScenarios">Test Scenarios</label>
+                            <div class="multi-select-dropdown">
+                                <div class="multi-select-toggle" onclick="toggleDropdown('scenarios')">
+                                    <span id="scenariosText">Select scenarios...</span>
+                                    <span class="dropdown-arrow">▼</span>
+                                </div>
+                                <div class="multi-select-options" id="scenariosDropdown" style="display: none;">
+                                    <label><input type="checkbox" value="clean" checked onchange="updateMultiSelect('scenarios')"> Clean</label>
+                                    <label><input type="checkbox" value="translation_5px" checked onchange="updateMultiSelect('scenarios')"> Translation 5px</label>
+                                    <label><input type="checkbox" value="translation_10px" onchange="updateMultiSelect('scenarios')"> Translation 10px</label>
+                                    <label><input type="checkbox" value="rotation_10deg" checked onchange="updateMultiSelect('scenarios')"> Rotation 10°</label>
+                                    <label><input type="checkbox" value="rotation_30deg" onchange="updateMultiSelect('scenarios')"> Rotation 30°</label>
+                                    <label><input type="checkbox" value="gaussian_noise" onchange="updateMultiSelect('scenarios')"> Gaussian Noise</label>
+                                    <label><input type="checkbox" value="salt_pepper" onchange="updateMultiSelect('scenarios')"> Salt & Pepper</label>
+                                    <label><input type="checkbox" value="gaussian_blur" onchange="updateMultiSelect('scenarios')"> Gaussian Blur</label>
+                                    <label><input type="checkbox" value="brightness_change" onchange="updateMultiSelect('scenarios')"> Brightness Change</label>
+                                    <label><input type="checkbox" value="scale_120" onchange="updateMultiSelect('scenarios')"> Scale 120%</label>
+                                    <label><input type="checkbox" value="combined_complex" onchange="updateMultiSelect('scenarios')"> Combined Complex</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="test-runner-actions">
+                        <button class="btn btn-primary" id="runTestBtn" onclick="runVisualTest()">
+                            <span id="runTestBtnText">Run Visual Test</span>
+                            <div class="spinner" id="runTestSpinner" style="display: none;"></div>
+                        </button>
+                        <div class="test-progress" id="testProgress" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill"></div>
+                            </div>
+                            <span class="progress-text" id="progressText">Preparing test...</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -113,7 +191,7 @@
 
         <!-- Performance Summary -->
         <section class="performance-section">
-            <h3 class="section-header">Algorithm Performance Summary</h3>
+            <h3 class="section-header">Algorithm Performance - Selected Session</h3>
             <div id="algorithmSummary" class="algorithm-grid">
                 <div class="loading">
                     <div class="spinner"></div>

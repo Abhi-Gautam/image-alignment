@@ -120,10 +120,6 @@ function showImageDisplay() {
                             <span class="metric-value">${selectedTest.performance_metrics.translation_error_px.toFixed(2)}px</span>
                         </div>
                         <div class="metric-item">
-                            <span class="metric-label">Rotation Error</span>
-                            <span class="metric-value">${selectedTest.performance_metrics.rotation_error_deg.toFixed(2)}°</span>
-                        </div>
-                        <div class="metric-item">
                             <span class="metric-label">Confidence</span>
                             <span class="metric-value">${selectedTest.alignment_result.confidence.toFixed(3)}</span>
                         </div>
@@ -153,7 +149,7 @@ function renderAlgorithmSummary(summaries) {
     const summaryContainer = document.getElementById('algorithmSummary');
     
     if (!summaries.length) {
-        summaryContainer.innerHTML = '<div class="empty-state">No algorithm data available</div>';
+        summaryContainer.innerHTML = '<div class="empty-state">Select a test session to view algorithm performance</div>';
         return;
     }
 

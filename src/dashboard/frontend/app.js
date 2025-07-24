@@ -79,23 +79,65 @@ async function loadDashboardData() {
         dashboardData = await response.json();
         filteredData = dashboardData;
         updateDashboard();
-        loadAlgorithmSummary();
+        updateAlgorithmSummary();
     } catch (error) {
         console.error('Error loading dashboard data:', error);
         showToast('Failed to load dashboard data', 'error');
     }
 }
 
-async function loadAlgorithmSummary() {
-    try {
-        const response = await fetch('/api/algorithms/summary');
-        if (!response.ok) throw new Error('Failed to fetch algorithm summary');
-        
-        const summaries = await response.json();
-        renderAlgorithmSummary(summaries);
-    } catch (error) {
-        console.error('Error loading algorithm summary:', error);
+function calculateSessionAlgorithmSummary(session) {
+    if (!session || !session.test_results.length) {
+        return [];
     }
+
+    const algorithmStats = {};
+    
+    // Group test results by algorithm
+    session.test_results.forEach(test => {
+        if (!algorithmStats[test.algorithm_name]) {
+            algorithmStats[test.algorithm_name] = {
+                name: test.algorithm_name,
+                total_tests: 0,
+                success_count: 0,
+                translation_errors: [],
+                processing_times: [],
+                confidences: []
+            };
+        }
+        
+        const stats = algorithmStats[test.algorithm_name];
+        stats.total_tests++;
+        
+        if (test.performance_metrics.success) {
+            stats.success_count++;
+        }
+        
+        stats.translation_errors.push(test.performance_metrics.translation_error_px);
+        stats.processing_times.push(test.alignment_result.execution_time_ms);
+        stats.confidences.push(test.alignment_result.confidence);
+    });
+    
+    // Calculate summary metrics
+    return Object.values(algorithmStats).map(stats => ({
+        name: stats.name,
+        total_tests: stats.total_tests,
+        success_count: stats.success_count,
+        success_rate: stats.total_tests > 0 ? (stats.success_count / stats.total_tests) * 100 : 0,
+        avg_translation_error: stats.translation_errors.reduce((a, b) => a + b, 0) / stats.translation_errors.length,
+        avg_processing_time: stats.processing_times.reduce((a, b) => a + b, 0) / stats.processing_times.length,
+        avg_confidence: stats.confidences.reduce((a, b) => a + b, 0) / stats.confidences.length
+    }));
+}
+
+function updateAlgorithmSummary() {
+    if (!selectedSession) {
+        renderAlgorithmSummary([]);
+        return;
+    }
+    
+    const summaries = calculateSessionAlgorithmSummary(selectedSession);
+    renderAlgorithmSummary(summaries);
 }
 
 function updateDashboard() {
