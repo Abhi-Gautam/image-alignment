@@ -1,8 +1,8 @@
 use crate::algorithms::*;
+use crate::config::Config;
 use crate::pipeline::{AlignmentAlgorithm, AlignmentResult};
+use crate::utils::image_conversion::grayimage_to_mat;
 use image::{imageops, GrayImage, Luma, Rgb, RgbImage};
-use opencv::core::Mat;
-use opencv::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -45,8 +45,6 @@ pub struct VisualOutputs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceMetrics {
     pub translation_error_px: f32,
-    pub rotation_error_deg: f32,
-    pub scale_error_ratio: f32,
     pub processing_time_ms: f32,
     pub confidence_score: f32,
     pub success: bool,
@@ -55,42 +53,7 @@ pub struct PerformanceMetrics {
 pub struct VisualTester {
     pub output_dir: PathBuf,
     pub algorithms: Vec<Box<dyn AlignmentAlgorithm>>,
-}
-
-impl VisualTester {
-    /// Convert GrayImage to OpenCV Mat
-    pub fn grayimage_to_mat(&self, image: &GrayImage) -> crate::Result<Mat> {
-        let width = image.width() as i32;
-        let height = image.height() as i32;
-
-        let mut mat = Mat::zeros(height, width, opencv::core::CV_8UC1)?.to_mat()?;
-
-        for y in 0..height {
-            for x in 0..width {
-                let pixel = image.get_pixel(x as u32, y as u32)[0];
-                *mat.at_2d_mut::<u8>(y, x)? = pixel;
-            }
-        }
-
-        Ok(mat)
-    }
-
-    /// Convert OpenCV Mat to GrayImage
-    pub fn mat_to_grayimage(&self, mat: &Mat) -> crate::Result<GrayImage> {
-        let width = mat.cols() as u32;
-        let height = mat.rows() as u32;
-
-        let mut gray_image = GrayImage::new(width, height);
-
-        for y in 0..(height as i32) {
-            for x in 0..(width as i32) {
-                let pixel_value = *mat.at_2d::<u8>(y, x)?;
-                gray_image.put_pixel(x as u32, y as u32, Luma([pixel_value]));
-            }
-        }
-
-        Ok(gray_image)
-    }
+    pub config: Config,
 }
 
 impl VisualTester {
@@ -120,6 +83,43 @@ impl VisualTester {
         Self {
             output_dir,
             algorithms,
+            config: Config::default(),
+        }
+    }
+
+    pub fn with_config(output_dir: PathBuf, config: Config) -> Self {
+        // Create output directory
+        std::fs::create_dir_all(&output_dir).expect("Failed to create output directory");
+
+        // Initialize all algorithms with config
+        let mut algorithms: Vec<Box<dyn AlignmentAlgorithm>> = Vec::new();
+        algorithms.push(Box::new(OpenCVTemplateMatcher::with_config(
+            crate::algorithms::opencv_template::TemplateMatchMode::NormalizedCrossCorrelation, 
+            config.algorithms.template.clone()
+        )));
+        algorithms.push(Box::new(OpenCVTemplateMatcher::with_config(
+            crate::algorithms::opencv_template::TemplateMatchMode::SumOfSquaredDifferences,
+            config.algorithms.template.clone()
+        )));
+        if let Ok(orb) = OpenCVORB::with_config(config.algorithms.orb.clone()) {
+            algorithms.push(Box::new(orb));
+        }
+
+        // Add new algorithms if they can be created successfully
+        if let Ok(akaze) = OpenCVAKAZE::with_config(config.algorithms.akaze.clone()) {
+            algorithms.push(Box::new(akaze));
+        }
+
+        algorithms.push(Box::new(OpenCVECC::with_config(config.algorithms.ecc.clone())));
+
+        if let Ok(sift) = OpenCVSIFT::with_config(config.algorithms.sift.clone()) {
+            algorithms.push(Box::new(sift));
+        }
+
+        Self {
+            output_dir,
+            algorithms,
+            config,
         }
     }
 
@@ -127,6 +127,7 @@ impl VisualTester {
     pub fn run_comprehensive_test(
         &mut self,
         sem_image_path: &Path,
+        patch_sizes: Option<&[u32]>,
     ) -> crate::Result<Vec<TestReport>> {
         println!(
             "🔬 Starting comprehensive visual test on: {}",
@@ -142,10 +143,11 @@ impl VisualTester {
         );
 
         // Extract multiple patches of different sizes
-        let patch_sizes = vec![32, 64, 128];
+        let default_patch_sizes = vec![32, 64, 128];
+        let patch_sizes = patch_sizes.unwrap_or(&default_patch_sizes);
         let mut all_reports = Vec::new();
 
-        for &patch_size in &patch_sizes {
+        for &patch_size in patch_sizes {
             println!(
                 "\n🔍 Testing with patch size: {}x{}",
                 patch_size, patch_size
@@ -153,6 +155,17 @@ impl VisualTester {
 
             // Extract 3 patches of this size
             let patches = self.extract_good_patches(&sem_image, patch_size, 3)?;
+
+            if patches.is_empty() {
+                println!(
+                    "  ⚠️  Skipping patch size {}x{} - image too small ({}x{})",
+                    patch_size,
+                    patch_size,
+                    sem_image.width(),
+                    sem_image.height()
+                );
+                continue;
+            }
 
             for (patch_idx, (patch, x, y)) in patches.into_iter().enumerate() {
                 let test_base_id = format!("{}x{}_patch{}", patch_size, patch_size, patch_idx + 1);
@@ -195,91 +208,6 @@ impl VisualTester {
         Ok(all_reports)
     }
 
-    /// Run focused visual tests with configurable parameters
-    pub fn run_focused_test(
-        &mut self,
-        sem_image_path: &Path,
-        patch_sizes: &[u32],
-        scenario_filters: &[String],
-    ) -> crate::Result<Vec<TestReport>> {
-        println!(
-            "🔬 Starting focused visual test on: {}",
-            sem_image_path.display()
-        );
-
-        // Load the SEM image
-        let sem_image = image::open(sem_image_path)?.to_luma8();
-        println!(
-            "📸 Loaded SEM image: {}x{}",
-            sem_image.width(),
-            sem_image.height()
-        );
-
-        let mut all_reports = Vec::new();
-
-        for &patch_size in patch_sizes {
-            println!(
-                "\n🔍 Testing with patch size: {}x{}",
-                patch_size, patch_size
-            );
-
-            // Extract 3 patches of this size
-            let patches = self.extract_good_patches(&sem_image, patch_size, 3)?;
-
-            for (patch_idx, (patch, x, y)) in patches.into_iter().enumerate() {
-                let test_base_id = format!("{}x{}_patch{}", patch_size, patch_size, patch_idx + 1);
-
-                // Create filtered test scenarios
-                let all_scenarios = self.create_test_scenarios();
-                let filtered_scenarios: Vec<_> = all_scenarios
-                    .into_iter()
-                    .filter(|scenario| {
-                        scenario_filters
-                            .iter()
-                            .any(|filter| scenario.name.contains(filter))
-                    })
-                    .collect();
-
-                println!(
-                    "  📋 Running {} scenarios for patch {}",
-                    filtered_scenarios.len(),
-                    patch_idx + 1
-                );
-
-                for scenario in filtered_scenarios {
-                    // Apply transformations and noise to the patch
-                    let transformed_patch =
-                        self.apply_transformation_and_noise(&patch, &scenario)?;
-
-                    // Test all algorithms
-                    for algorithm in &self.algorithms {
-                        let test_id =
-                            format!("{}_{}_{}", test_base_id, scenario.name, algorithm.name());
-
-                        println!("  🧪 Testing: {}", test_id);
-
-                        let report = self.run_single_test(
-                            &test_id,
-                            sem_image_path,
-                            &sem_image,
-                            &patch,
-                            (x, y),
-                            &transformed_patch,
-                            &scenario,
-                            algorithm.as_ref(),
-                        )?;
-
-                        all_reports.push(report);
-                    }
-                }
-            }
-        }
-
-        // Generate summary report with confidence analysis
-        self.generate_focused_summary_report(&all_reports)?;
-
-        Ok(all_reports)
-    }
 
     /// Extract good patches with sufficient texture
     fn extract_good_patches(
@@ -293,8 +221,20 @@ impl VisualTester {
         let min_variance = 100.0;
 
         for attempt in 0..100 {
-            let x = margin + (attempt * 47) % (image.width() - patch_size - margin);
-            let y = margin + (attempt * 37) % (image.height() - patch_size - margin);
+            // Ensure we don't divide by zero
+            let x_range = if image.width() > patch_size + margin {
+                image.width() - patch_size - margin
+            } else {
+                1 // fallback to avoid division by zero
+            };
+            let y_range = if image.height() > patch_size + margin {
+                image.height() - patch_size - margin
+            } else {
+                1 // fallback to avoid division by zero
+            };
+
+            let x = margin + (attempt * 47) % x_range;
+            let y = margin + (attempt * 37) % y_range;
 
             // Extract patch
             let patch = imageops::crop_imm(image, x, y, patch_size, patch_size).to_image();
@@ -343,60 +283,74 @@ impl VisualTester {
                 scale_factor: 1.0,
             },
             TestScenario {
-                name: "optical_system_A".to_string(),
-                noise_type: NoiseType::Gaussian { sigma: 2.0 },
-                rotation_deg: 0.5,   // Small rotation due to alignment
-                translation: (0, 0), // Same physical location
-                scale_factor: 1.02,  // Slight magnification difference
-            },
-            TestScenario {
-                name: "optical_system_B".to_string(),
-                noise_type: NoiseType::Brightness { delta: 10 },
-                rotation_deg: -0.8,  // Small rotation opposite direction
-                translation: (0, 0), // Same physical location
-                scale_factor: 0.98,  // Slight magnification difference
-            },
-            TestScenario {
-                name: "optical_misalignment_large".to_string(),
+                name: "translation_5px".to_string(),
                 noise_type: NoiseType::None,
-                rotation_deg: 2.5, // Larger misalignment
-                translation: (0, 0),
-                scale_factor: 1.05,
+                rotation_deg: 0.0,
+                translation: (5, 5),
+                scale_factor: 1.0,
             },
             TestScenario {
-                name: "different_illumination".to_string(),
-                noise_type: NoiseType::Brightness { delta: 20 },
-                rotation_deg: 0.3,
-                translation: (0, 0),
-                scale_factor: 1.01,
+                name: "translation_10px".to_string(),
+                noise_type: NoiseType::None,
+                rotation_deg: 0.0,
+                translation: (10, -10),
+                scale_factor: 1.0,
             },
             TestScenario {
-                name: "focus_blur".to_string(),
-                noise_type: NoiseType::GaussianBlur { sigma: 1.5 },
-                rotation_deg: -0.5,
-                translation: (0, 0),
-                scale_factor: 0.99,
-            },
-            TestScenario {
-                name: "sensor_noise".to_string(),
-                noise_type: NoiseType::Gaussian { sigma: 5.0 },
-                rotation_deg: 0.2,
+                name: "rotation_10deg".to_string(),
+                noise_type: NoiseType::None,
+                rotation_deg: 10.0,
                 translation: (0, 0),
                 scale_factor: 1.0,
             },
             TestScenario {
-                name: "contrast_difference".to_string(),
-                noise_type: NoiseType::Brightness { delta: -15 },
-                rotation_deg: 0.0,
+                name: "rotation_30deg".to_string(),
+                noise_type: NoiseType::None,
+                rotation_deg: 30.0,
                 translation: (0, 0),
-                scale_factor: 1.03,
+                scale_factor: 1.0,
             },
             TestScenario {
-                name: "combined_realistic".to_string(),
-                noise_type: NoiseType::Gaussian { sigma: 3.0 },
-                rotation_deg: 1.2,
+                name: "gaussian_noise".to_string(),
+                noise_type: NoiseType::Gaussian { sigma: 5.0 },
+                rotation_deg: 0.0,
                 translation: (0, 0),
-                scale_factor: 1.04,
+                scale_factor: 1.0,
+            },
+            TestScenario {
+                name: "salt_pepper".to_string(),
+                noise_type: NoiseType::SaltPepper { density: 0.005 },
+                rotation_deg: 0.0,
+                translation: (0, 0),
+                scale_factor: 1.0,
+            },
+            TestScenario {
+                name: "gaussian_blur".to_string(),
+                noise_type: NoiseType::GaussianBlur { sigma: 1.5 },
+                rotation_deg: 0.0,
+                translation: (0, 0),
+                scale_factor: 1.0,
+            },
+            TestScenario {
+                name: "brightness_change".to_string(),
+                noise_type: NoiseType::Brightness { delta: 20 },
+                rotation_deg: 0.0,
+                translation: (0, 0),
+                scale_factor: 1.0,
+            },
+            TestScenario {
+                name: "scale_120".to_string(),
+                noise_type: NoiseType::None,
+                rotation_deg: 0.0,
+                translation: (0, 0),
+                scale_factor: 1.2,
+            },
+            TestScenario {
+                name: "combined_complex".to_string(),
+                noise_type: NoiseType::Gaussian { sigma: 3.0 },
+                rotation_deg: 15.0,
+                translation: (5, -5),
+                scale_factor: 1.1,
             },
         ]
     }
@@ -583,11 +537,11 @@ impl VisualTester {
         transformed_patch.save(&transformed_patch_path)?;
 
         // Convert patches to Mat format for the new pipeline
-        let _original_mat = self.grayimage_to_mat(original_patch)?;
-        let transformed_mat = self.grayimage_to_mat(transformed_patch)?;
+        let _original_mat = grayimage_to_mat(original_patch)?;
+        let transformed_mat = grayimage_to_mat(transformed_patch)?;
 
         // Convert the full search image to Mat for alignment
-        let search_mat = self.grayimage_to_mat(sem_image)?;
+        let search_mat = grayimage_to_mat(sem_image)?;
 
         // Run alignment using the new signature
         // The algorithm searches for the transformed patch in the full SEM image
@@ -627,7 +581,8 @@ impl VisualTester {
         )?;
 
         // Calculate performance metrics
-        let performance_metrics = self.calculate_performance_metrics(&alignment_result, scenario);
+        let patch_size = original_patch.width(); // Assuming square patches
+        let performance_metrics = self.calculate_performance_metrics(&alignment_result, patch_location, patch_size, scenario);
 
         // Create test report
         let report = TestReport {
@@ -759,7 +714,7 @@ impl VisualTester {
             }
         }
 
-        // Draw original patch location in green
+        // Draw original patch location in bright green
         self.draw_rectangle(
             &mut overlay,
             patch_location,
@@ -795,27 +750,55 @@ impl VisualTester {
         color: Rgb<u8>,
     ) {
         let (x, y) = location;
+        let thickness = 3; // Make lines 3 pixels thick
+        
+        // Make colors brighter and more visible
+        let bright_color = match color {
+            Rgb([0, 255, 0]) => Rgb([50, 255, 50]), // Brighter green
+            Rgb([255, 0, 0]) => Rgb([255, 50, 50]), // Brighter red
+            _ => color,
+        };
 
-        // Draw horizontal lines
-        for i in 0..width {
-            if x + i < image.width() {
-                if y < image.height() {
-                    image.put_pixel(x + i, y, color);
-                }
-                if y + height < image.height() {
-                    image.put_pixel(x + i, y + height, color);
+        // Draw thick horizontal lines (top and bottom)
+        for t in 0..thickness {
+            for i in 0..width {
+                if x + i < image.width() {
+                    // Top line
+                    if y >= t && y - t < image.height() {
+                        image.put_pixel(x + i, y - t, bright_color);
+                    }
+                    if y + t < image.height() {
+                        image.put_pixel(x + i, y + t, bright_color);
+                    }
+                    // Bottom line
+                    if y + height >= t && y + height - t < image.height() {
+                        image.put_pixel(x + i, y + height - t, bright_color);
+                    }
+                    if y + height + t < image.height() {
+                        image.put_pixel(x + i, y + height + t, bright_color);
+                    }
                 }
             }
         }
 
-        // Draw vertical lines
-        for i in 0..height {
-            if y + i < image.height() {
-                if x < image.width() {
-                    image.put_pixel(x, y + i, color);
-                }
-                if x + width < image.width() {
-                    image.put_pixel(x + width, y + i, color);
+        // Draw thick vertical lines (left and right)
+        for t in 0..thickness {
+            for i in 0..height {
+                if y + i < image.height() {
+                    // Left line
+                    if x >= t && x - t < image.width() {
+                        image.put_pixel(x - t, y + i, bright_color);
+                    }
+                    if x + t < image.width() {
+                        image.put_pixel(x + t, y + i, bright_color);
+                    }
+                    // Right line
+                    if x + width >= t && x + width - t < image.width() {
+                        image.put_pixel(x + width - t, y + i, bright_color);
+                    }
+                    if x + width + t < image.width() {
+                        image.put_pixel(x + width + t, y + i, bright_color);
+                    }
                 }
             }
         }
@@ -853,41 +836,34 @@ impl VisualTester {
     fn calculate_performance_metrics(
         &self,
         result: &AlignmentResult,
+        patch_location: (u32, u32),
+        patch_size: u32,
         _scenario: &TestScenario,
     ) -> PerformanceMetrics {
-        // Extract transformation parameters from the new result format
-        let (actual_translation, actual_rotation, actual_scale) =
-            if let Some(transform) = &result.transformation {
-                (
-                    transform.translation,
-                    transform.rotation_degrees,
-                    transform.scale,
-                )
-            } else {
-                // This shouldn't happen with our updated code
-                ((0.0, 0.0), 0.0, 1.0)
-            };
+        // Calculate expected patch center (where we extracted the original patch)
+        let expected_center_x = patch_location.0 as f32 + patch_size as f32 / 2.0;
+        let expected_center_y = patch_location.1 as f32 + patch_size as f32 / 2.0;
+        
+        // Calculate actual detected center (where algorithm found the patch)
+        let (actual_center_x, actual_center_y) = (
+            result.location.x as f32 + result.location.width as f32 / 2.0,
+            result.location.y as f32 + result.location.height as f32 / 2.0
+        );
+        
+        // CORRECT translation error: distance between expected and actual centers
+        let translation_error = ((actual_center_x - expected_center_x).powi(2) + 
+                                (actual_center_y - expected_center_y).powi(2)).sqrt();
 
-        // For realistic optical system testing:
-        // - We expect the patch to be found at its original location (displacement ~0)
-        // - The algorithms should compensate for the optical differences
-        // - Translation error is the displacement from the original patch location
-        let translation_error =
-            (actual_translation.0.powi(2) + actual_translation.1.powi(2)).sqrt();
-
-        // For rotation and scale, we expect the algorithm to detect and compensate
-        // So actual_rotation should be close to -scenario.rotation_deg (inverse of applied rotation)
-        // And actual_scale should be close to 1/scenario.scale_factor (inverse of applied scale)
-        let rotation_error = actual_rotation.abs(); // How much rotation remains uncompensated
-        let scale_error = (actual_scale - 1.0).abs(); // How far from original scale
+        // SUCCESS criteria: ONLY translation error and confidence
+        let success_criteria = &self.config.validation.success_criteria;
+        let success = translation_error < success_criteria.translation_accuracy_px
+                     && result.confidence > success_criteria.min_confidence as f64;
 
         PerformanceMetrics {
             translation_error_px: translation_error,
-            rotation_error_deg: rotation_error,
-            scale_error_ratio: scale_error,
             processing_time_ms: result.execution_time_ms as f32,
             confidence_score: result.confidence as f32,
-            success: translation_error < 10.0 && rotation_error < 45.0 && result.confidence > 0.1,
+            success,
         }
     }
 
@@ -1106,34 +1082,57 @@ impl VisualTester {
         algorithm_stats.sort_by(|a, b| {
             a.avg_translation_error
                 .partial_cmp(&b.avg_translation_error)
-                .unwrap()
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Find best performers
-        let best_accuracy = algorithm_stats
-            .iter()
-            .min_by(|a, b| {
-                a.avg_translation_error
-                    .partial_cmp(&b.avg_translation_error)
-                    .unwrap()
-            })
-            .unwrap();
-        let fastest = algorithm_stats
-            .iter()
-            .min_by(|a, b| a.avg_time_ms.partial_cmp(&b.avg_time_ms).unwrap())
-            .unwrap();
-        let highest_success = algorithm_stats
-            .iter()
-            .max_by(|a, b| a.success_rate.partial_cmp(&b.success_rate).unwrap())
-            .unwrap();
+        // Find best performers (with error handling for empty stats)
+        let (best_accuracy_algorithm, best_accuracy_error) = if algorithm_stats.is_empty() {
+            ("No data".to_string(), 0.0)
+        } else {
+            let best_accuracy = algorithm_stats
+                .iter()
+                .min_by(|a, b| {
+                    a.avg_translation_error
+                        .partial_cmp(&b.avg_translation_error)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap();
+            (
+                best_accuracy.algorithm.clone(),
+                best_accuracy.avg_translation_error,
+            )
+        };
 
-        // Clone the values we need for the summary
-        let best_accuracy_algorithm = best_accuracy.algorithm.clone();
-        let best_accuracy_error = best_accuracy.avg_translation_error;
-        let fastest_algorithm = fastest.algorithm.clone();
-        let fastest_time = fastest.avg_time_ms;
-        let highest_success_rate_algorithm = highest_success.algorithm.clone();
-        let highest_success_rate = highest_success.success_rate;
+        let (fastest_algorithm, fastest_time) = if algorithm_stats.is_empty() {
+            ("No data".to_string(), 0.0)
+        } else {
+            let fastest = algorithm_stats
+                .iter()
+                .min_by(|a, b| {
+                    a.avg_time_ms
+                        .partial_cmp(&b.avg_time_ms)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap();
+            (fastest.algorithm.clone(), fastest.avg_time_ms)
+        };
+
+        let (highest_success_rate_algorithm, highest_success_rate) = if algorithm_stats.is_empty() {
+            ("No data".to_string(), 0.0)
+        } else {
+            let highest_success = algorithm_stats
+                .iter()
+                .max_by(|a, b| {
+                    a.success_rate
+                        .partial_cmp(&b.success_rate)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap();
+            (
+                highest_success.algorithm.clone(),
+                highest_success.success_rate,
+            )
+        };
 
         // Extract unique patch sizes and scenarios from reports
         let mut patch_sizes = std::collections::HashSet::new();
@@ -1171,159 +1170,6 @@ impl VisualTester {
         Ok(())
     }
 
-    /// Generate focused summary report with confidence analysis
-    fn generate_focused_summary_report(&self, reports: &[TestReport]) -> crate::Result<()> {
-        // First generate the aggregated statistics
-        self.generate_aggregated_statistics(reports)?;
-
-        let summary_path = self.output_dir.join("FOCUSED_ANALYSIS_REPORT.md");
-        let mut summary = String::new();
-
-        summary.push_str("# 🎯 Focused Algorithm Analysis Report\n\n");
-        summary.push_str(&format!(
-            "**Generated:** {}\\n",
-            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-        ));
-        summary.push_str(&format!("**Total Tests:** {}\\n\\n", reports.len()));
-
-        // Group by algorithm
-        let mut algorithms: std::collections::HashMap<String, Vec<&TestReport>> =
-            std::collections::HashMap::new();
-        for report in reports {
-            algorithms
-                .entry(report.algorithm_name.clone())
-                .or_default()
-                .push(report);
-        }
-
-        summary.push_str("## 🚨 CONFIDENCE vs ACCURACY ANALYSIS\\n\\n");
-        summary.push_str("### **Key Insight: High Confidence ≠ High Accuracy!**\\n\\n");
-
-        for (algo_name, algo_reports) in &algorithms {
-            let success_count = algo_reports
-                .iter()
-                .filter(|r| r.performance_metrics.success)
-                .count();
-            let avg_confidence: f32 = algo_reports
-                .iter()
-                .map(|r| r.performance_metrics.confidence_score)
-                .sum::<f32>()
-                / algo_reports.len() as f32;
-            let avg_error: f32 = algo_reports
-                .iter()
-                .map(|r| r.performance_metrics.translation_error_px)
-                .sum::<f32>()
-                / algo_reports.len() as f32;
-            let avg_time: f32 = algo_reports
-                .iter()
-                .map(|r| r.performance_metrics.processing_time_ms)
-                .sum::<f32>()
-                / algo_reports.len() as f32;
-
-            summary.push_str(&format!("#### {} Algorithm Analysis\\n", algo_name));
-            summary.push_str(&format!(
-                "- **Success Rate**: {}/{} ({:.1}%)\\n",
-                success_count,
-                algo_reports.len(),
-                success_count as f32 / algo_reports.len() as f32 * 100.0
-            ));
-            summary.push_str(&format!(
-                "- **Average Confidence**: {:.3}\\n",
-                avg_confidence
-            ));
-            summary.push_str(&format!(
-                "- **Average Translation Error**: {:.2}px\\n",
-                avg_error
-            ));
-            summary.push_str(&format!(
-                "- **Average Processing Time**: {:.1}ms\\n",
-                avg_time
-            ));
-
-            // Analyze confidence patterns
-            if algo_name.contains("NCC") || algo_name.contains("SSD") {
-                summary.push_str("- **Algorithm Type**: Template Matching\\n");
-                summary.push_str("- **Confidence Meaning**: Pattern correlation strength\\n");
-                summary.push_str("- **Issue**: High confidence can indicate strong correlation in WRONG location\\n");
-                summary.push_str("- **Recommendation**: Add search region constraints, verify spatial plausibility\\n");
-            } else if algo_name.contains("SIFT")
-                || algo_name.contains("ORB")
-                || algo_name.contains("AKAZE")
-            {
-                summary.push_str("- **Algorithm Type**: Feature-based\\n");
-                summary.push_str("- **Confidence Meaning**: Reliability of feature matches\\n");
-                summary.push_str(
-                    "- **Issue**: Low confidence with good accuracy = conservative but correct\\n",
-                );
-                summary.push_str("- **Recommendation**: Use larger patches (128x128+), tune confidence thresholds\\n");
-            } else if algo_name.contains("ECC") {
-                summary.push_str("- **Algorithm Type**: Geometric transformation\\n");
-                summary.push_str("- **Confidence Meaning**: Transformation model fit quality\\n");
-                summary.push_str("- **Issue**: Variable performance, needs parameter tuning\\n");
-                summary.push_str("- **Recommendation**: Optimize motion model selection\\n");
-            }
-            summary.push_str("\\n");
-        }
-
-        summary.push_str("## 📊 Detailed Performance Matrix\\n\\n");
-        summary.push_str("| Algorithm | Tests | Success Rate | Avg Confidence | Avg Error (px) | Avg Time (ms) | Confidence Type |\\n");
-        summary.push_str("|-----------|-------|--------------|----------------|----------------|---------------|-----------------|\\n");
-
-        for (algo_name, algo_reports) in algorithms {
-            let success_count = algo_reports
-                .iter()
-                .filter(|r| r.performance_metrics.success)
-                .count();
-            let success_rate = success_count as f32 / algo_reports.len() as f32 * 100.0;
-            let avg_confidence: f32 = algo_reports
-                .iter()
-                .map(|r| r.performance_metrics.confidence_score)
-                .sum::<f32>()
-                / algo_reports.len() as f32;
-            let avg_error: f32 = algo_reports
-                .iter()
-                .map(|r| r.performance_metrics.translation_error_px)
-                .sum::<f32>()
-                / algo_reports.len() as f32;
-            let avg_time: f32 = algo_reports
-                .iter()
-                .map(|r| r.performance_metrics.processing_time_ms)
-                .sum::<f32>()
-                / algo_reports.len() as f32;
-
-            let conf_type = if algo_name.contains("NCC") || algo_name.contains("SSD") {
-                "Pattern Correlation"
-            } else if algo_name.contains("SIFT")
-                || algo_name.contains("ORB")
-                || algo_name.contains("AKAZE")
-            {
-                "Feature Reliability"
-            } else {
-                "Transform Quality"
-            };
-
-            summary.push_str(&format!(
-                "| {} | {} | {:.1}% | {:.3} | {:.2} | {:.1} | {} |\\n",
-                algo_name,
-                algo_reports.len(),
-                success_rate,
-                avg_confidence,
-                avg_error,
-                avg_time,
-                conf_type
-            ));
-        }
-
-        summary.push_str("\\n## 🎯 Key Recommendations\\n\\n");
-        summary.push_str("1. **Template Matching (NCC/SSD)**: Add search region constraints to prevent false positives\\n");
-        summary.push_str("2. **Feature-based (SIFT/ORB/AKAZE)**: Use larger patches (128x128+) for better feature detection\\n");
-        summary.push_str("3. **Success Criteria**: Consider separate thresholds for different algorithm types\\n");
-        summary.push_str("4. **Confidence Interpretation**: High confidence ≠ correct result for template matching\\n");
-        summary.push_str("5. **Performance**: Feature algorithms need more processing time but can be more spatially accurate\\n");
-
-        std::fs::write(summary_path, summary)?;
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone)]
