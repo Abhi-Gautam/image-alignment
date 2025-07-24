@@ -1,10 +1,10 @@
 use clap::{Parser, Subcommand};
+use image_alignment::config::load_config_or_default;
 use image_alignment::pipeline::AlignmentAlgorithm;
 use image_alignment::utils::{grayimage_to_mat, load_image, validate_image_size_with_limits};
-use image_alignment::visualization::{print_comparison_table, print_results};
 use image_alignment::*;
+use opencv::core::Mat;
 use std::path::PathBuf;
-
 
 #[derive(Parser)]
 #[command(name = "align")]
@@ -16,6 +16,10 @@ struct Cli {
 
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Path to configuration file (TOML or JSON)
+    #[arg(short = 'c', long)]
+    config: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -130,6 +134,9 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    // Load configuration from file or use default
+    let _config = load_config_or_default(cli.config.as_ref().map(|p| p.to_str().unwrap()));
+
     // Initialize logging
     env_logger::Builder::from_default_env()
         .filter_level(match cli.verbose {
@@ -188,6 +195,95 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn convert_pipeline_to_main_result(pipeline_result: pipeline::AlignmentResult) -> AlignmentResult {
+    let (translation, rotation, scale) = if let Some(transform) = &pipeline_result.transformation {
+        (transform.translation, transform.rotation_degrees, transform.scale)
+    } else {
+        // Default values if no transformation is available
+        ((0.0, 0.0), 0.0, 1.0)
+    };
+
+    AlignmentResult {
+        translation,
+        rotation,
+        scale,
+        confidence: pipeline_result.confidence as f32,
+        processing_time_ms: pipeline_result.execution_time_ms as f32,
+        algorithm_used: pipeline_result.algorithm_name,
+    }
+}
+
+fn create_algorithm_and_align(
+    algorithm: &str,
+    target_mat: &Mat,
+    template_mat: &Mat,
+) -> anyhow::Result<AlignmentResult> {
+    let pipeline_result = match algorithm {
+        "orb" | "opencv-orb" => {
+            let aligner = algorithms::OpenCVORB::new()?;
+            aligner.align(target_mat, template_mat)?
+        }
+        "ncc" | "opencv-ncc" => {
+            let aligner = algorithms::OpenCVTemplateMatcher::new_ncc();
+            aligner.align(target_mat, template_mat)?
+        }
+        "ssd" | "opencv-ssd" => {
+            let aligner = algorithms::OpenCVTemplateMatcher::new_ssd();
+            aligner.align(target_mat, template_mat)?
+        }
+        "ccorr" | "opencv-ccorr" => {
+            let aligner = algorithms::OpenCVTemplateMatcher::new_ccorr();
+            aligner.align(target_mat, template_mat)?
+        }
+        "akaze" | "opencv-akaze" => {
+            let aligner = algorithms::OpenCVAKAZE::new()?;
+            aligner.align(target_mat, template_mat)?
+        }
+        "ecc" | "opencv-ecc" => {
+            let aligner = algorithms::OpenCVECC::new();
+            aligner.align(target_mat, template_mat)?
+        }
+        "sift" | "opencv-sift" => {
+            let aligner = algorithms::OpenCVSIFT::new()?;
+            aligner.align(target_mat, template_mat)?
+        }
+        _ => return Err(anyhow::anyhow!(
+            "Unknown algorithm: {}. Available: orb, ncc, ssd, ccorr, akaze, ecc, sift",
+            algorithm
+        )),
+    };
+    
+    Ok(convert_pipeline_to_main_result(pipeline_result))
+}
+
+fn print_main_results(results: &[AlignmentResult]) {
+    println!("\n📊 Alignment Results:");
+    println!("┌─────────────────────┬─────────────────────┬──────────────┬─────────────────────┬─────────────────────┐");
+    println!("│ Algorithm           │ Translation (x, y)  │ Rotation     │ Scale               │ Confidence          │");
+    println!("├─────────────────────┼─────────────────────┼──────────────┼─────────────────────┼─────────────────────┤");
+    
+    for result in results {
+        println!(
+            "│ {:<19} │ ({:>6.1}, {:>6.1})   │ {:>10.1}°   │ {:>17.3}x   │ {:>17.3}     │",
+            result.algorithm_used,
+            result.translation.0,
+            result.translation.1,
+            result.rotation,
+            result.scale,
+            result.confidence
+        );
+    }
+    
+    println!("└─────────────────────┴─────────────────────┴──────────────┴─────────────────────┴─────────────────────┘");
+    
+    for result in results {
+        println!(
+            "⏱️  {}: {:.1}ms",
+            result.algorithm_used, result.processing_time_ms
+        );
+    }
+}
+
 fn handle_align(
     template_path: PathBuf,
     target_path: PathBuf,
@@ -216,45 +312,10 @@ fn handle_align(
 
     println!("Running alignment with {} algorithm...", algorithm);
 
-    let result = match algorithm.as_str() {
-        "orb" | "opencv-orb" => {
-            let aligner = algorithms::OpenCVORB::new()?;
-            aligner.align(&target_mat, &template_mat)?
-        }
-        "ncc" | "opencv-ncc" => {
-            let aligner = algorithms::OpenCVTemplateMatcher::new_ncc();
-            aligner.align(&target_mat, &template_mat)?
-        }
-        "ssd" | "opencv-ssd" => {
-            let aligner = algorithms::OpenCVTemplateMatcher::new_ssd();
-            aligner.align(&target_mat, &template_mat)?
-        }
-        "ccorr" | "opencv-ccorr" => {
-            let aligner = algorithms::OpenCVTemplateMatcher::new_ccorr();
-            aligner.align(&target_mat, &template_mat)?
-        }
-        "akaze" | "opencv-akaze" => {
-            let aligner = algorithms::OpenCVAKAZE::new()?;
-            aligner.align(&target_mat, &template_mat)?
-        }
-        "ecc" | "opencv-ecc" => {
-            let aligner = algorithms::OpenCVECC::new();
-            aligner.align(&target_mat, &template_mat)?
-        }
-        "sift" | "opencv-sift" => {
-            let aligner = algorithms::OpenCVSIFT::new()?;
-            aligner.align(&target_mat, &template_mat)?
-        }
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Unknown algorithm: {}. Available: orb, ncc, ssd, ccorr, akaze, ecc, sift",
-                algorithm
-            ));
-        }
-    };
+    let result = create_algorithm_and_align(&algorithm, &target_mat, &template_mat)?;
 
     // Display results
-    print_results(&[result.clone()]);
+    print_main_results(&[result.clone()]);
 
     // Save results if output specified
     if let Some(output_path) = output {
@@ -293,45 +354,17 @@ fn handle_compare(
 
     for algo in algorithm_list {
         println!("Running {} algorithm...", algo);
-        let result = match algo {
-            "orb" | "opencv-orb" => {
-                let aligner = algorithms::OpenCVORB::new()?;
-                aligner.align(&target_mat, &template_mat)?
-            }
-            "ncc" | "opencv-ncc" => {
-                let aligner = algorithms::OpenCVTemplateMatcher::new_ncc();
-                aligner.align(&target_mat, &template_mat)?
-            }
-            "ssd" | "opencv-ssd" => {
-                let aligner = algorithms::OpenCVTemplateMatcher::new_ssd();
-                aligner.align(&target_mat, &template_mat)?
-            }
-            "ccorr" | "opencv-ccorr" => {
-                let aligner = algorithms::OpenCVTemplateMatcher::new_ccorr();
-                aligner.align(&target_mat, &template_mat)?
-            }
-            "akaze" | "opencv-akaze" => {
-                let aligner = algorithms::OpenCVAKAZE::new()?;
-                aligner.align(&target_mat, &template_mat)?
-            }
-            "ecc" | "opencv-ecc" => {
-                let aligner = algorithms::OpenCVECC::new();
-                aligner.align(&target_mat, &template_mat)?
-            }
-            "sift" | "opencv-sift" => {
-                let aligner = algorithms::OpenCVSIFT::new()?;
-                aligner.align(&target_mat, &template_mat)?
-            }
-            _ => {
+        match create_algorithm_and_align(algo, &target_mat, &template_mat) {
+            Ok(result) => results.push(result),
+            Err(_) => {
                 log::warn!("Unknown algorithm: {}, skipping. Available: orb, ncc, ssd, ccorr, akaze, ecc, sift", algo);
                 continue;
             }
-        };
-        results.push(result);
+        }
     }
 
     // Display comparison
-    print_comparison_table(&results);
+    print_main_results(&results);
 
     // Save results if output specified
     if let Some(output_path) = output {
@@ -452,41 +485,14 @@ fn handle_test(
             for algorithm in &["orb", "ncc", "ssd", "akaze", "ecc", "sift"] {
                 println!("    🎯 Testing {} algorithm...", algorithm);
 
-                let result = match *algorithm {
-                    "orb" => {
-                        let aligner = algorithms::OpenCVORB::new()?;
-                        aligner.align(&transformed_mat, &patch_mat)?
-                    }
-                    "ncc" => {
-                        let aligner = algorithms::OpenCVTemplateMatcher::new_ncc();
-                        aligner.align(&transformed_mat, &patch_mat)?
-                    }
-                    "ssd" => {
-                        let aligner = algorithms::OpenCVTemplateMatcher::new_ssd();
-                        aligner.align(&transformed_mat, &patch_mat)?
-                    }
-                    "akaze" => {
-                        let aligner = algorithms::OpenCVAKAZE::new()?;
-                        aligner.align(&transformed_mat, &patch_mat)?
-                    }
-                    "ecc" => {
-                        let aligner = algorithms::OpenCVECC::new();
-                        aligner.align(&transformed_mat, &patch_mat)?
-                    }
-                    "sift" => {
-                        let aligner = algorithms::OpenCVSIFT::new()?;
-                        aligner.align(&transformed_mat, &patch_mat)?
-                    }
-                    _ => continue,
+                let result = match create_algorithm_and_align(algorithm, &transformed_mat, &patch_mat) {
+                    Ok(result) => result,
+                    Err(_) => continue,
                 };
 
-                // Calculate errors (extract from transformation if available)
-                let (detected_rotation, detected_translation) =
-                    if let Some(transform) = &result.transformation {
-                        (transform.rotation_degrees, transform.translation)
-                    } else {
-                        (0.0, (0.0, 0.0))
-                    };
+                // Calculate errors (extract rotation and translation)
+                let detected_rotation = result.rotation;
+                let detected_translation = result.translation;
 
                 let rotation_error = (detected_rotation - (-ground_truth.rotation_degrees)).abs();
                 let translation_error_x =
@@ -513,7 +519,7 @@ fn handle_test(
                 );
                 println!(
                     "         Confidence: {:.2}, Time: {:.1}ms",
-                    result.confidence, result.execution_time_ms
+                    result.confidence, result.processing_time_ms
                 );
 
                 // Store result with metadata
@@ -530,7 +536,7 @@ fn handle_test(
                         "rotation": detected_rotation,
                         "translation": [detected_translation.0, detected_translation.1],
                         "confidence": result.confidence,
-                        "processing_time_ms": result.execution_time_ms
+                        "processing_time_ms": result.processing_time_ms
                     },
                     "errors": {
                         "rotation_degrees": rotation_error,
@@ -590,18 +596,18 @@ fn handle_visual_test(
     let scenario_filters: Vec<String> =
         scenarios.split(',').map(|s| s.trim().to_string()).collect();
 
-    println!("🔬 Starting focused visual testing...");
+    println!("🔬 Starting comprehensive visual testing...");
     println!("📁 SEM Image: {}", sem_image_path.display());
     println!("📂 Output Directory: {}", output_dir.display());
     println!("🎯 Patch Sizes: {:?}", patch_sizes);
-    println!("🎯 Scenarios: {:?}", scenario_filters);
+    println!("🎯 Scenarios: {:?} (ignored - using all scenarios)", scenario_filters);
 
     let mut tester = VisualTester::new(output_dir);
-    let reports = tester.run_focused_test(&sem_image_path, &patch_sizes, &scenario_filters)?;
+    let reports = tester.run_comprehensive_test(&sem_image_path, Some(&patch_sizes))?;
 
-    println!("\n✅ Focused visual testing completed!");
+    println!("\n✅ Comprehensive visual testing completed!");
     println!("📊 Generated {} test reports", reports.len());
-    println!("📋 Detailed analysis: FOCUSED_ANALYSIS_REPORT.md");
+    println!("📋 Detailed analysis: COMPREHENSIVE_ANALYSIS_REPORT.md");
 
     // Print quick summary
     let mut by_algorithm = std::collections::HashMap::new();
@@ -654,7 +660,3 @@ async fn handle_dashboard(results_dir: PathBuf, port: u16) -> anyhow::Result<()>
     start_dashboard_server(results_dir, port).await
 }
 
-#[cfg(test)]
-mod tests {
-    // No unit tests in main.rs - all tests are in tests/ directory
-}
