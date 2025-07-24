@@ -78,53 +78,67 @@ function showImageDisplay() {
     const imageResults = document.getElementById('imageResults');
     
     imageResults.innerHTML = `
-        <div class="image-container">
-            <h4>SEM Image with Alignment Overlay</h4>
-            <img src="/api/image/${selectedTest.visual_outputs.overlay_result_path}" 
-                 alt="Alignment Overlay" 
-                 onclick="openModal(this)"
-                 onerror="this.style.display='none'">
-        </div>
-        <div class="image-container">
-            <h4>Original Patch</h4>
-            <img src="/api/image/${selectedTest.patch_info.patch_path}" 
-                 alt="Original Patch" 
-                 onclick="openModal(this)"
-                 onerror="this.style.display='none'">
-        </div>
-        <div class="image-container">
-            <h4>Transformed Patch</h4>
-            <img src="/api/image/${selectedTest.transformation_applied.transformed_patch_path}" 
-                 alt="Transformed Patch" 
-                 onclick="openModal(this)"
-                 onerror="this.style.display='none'">
-        </div>
-        <div class="metrics-panel">
-            <div class="metric-row">
-                <span class="metric-label">Algorithm</span>
-                <span class="metric-value">${selectedTest.algorithm_name}</span>
+        <div class="visual-results-layout">
+            <!-- Row 1: Main SEM Image and Patches -->
+            <div class="images-row">
+                <div class="main-image-container">
+                    <h4>SEM Image with Alignment Overlay</h4>
+                    <img src="/api/image/${selectedTest.visual_outputs.overlay_result_path}" 
+                         alt="Alignment Overlay" 
+                         onclick="openModal(this)"
+                         onerror="this.style.display='none'">
+                </div>
+                <div class="patches-container">
+                    <div class="patch-image">
+                        <h4>Original Patch</h4>
+                        <img src="/api/image/${selectedTest.patch_info.patch_path}" 
+                             alt="Original Patch" 
+                             onclick="openModal(this)"
+                             onerror="this.style.display='none'">
+                    </div>
+                    <div class="patch-image">
+                        <h4>Transformed Patch</h4>
+                        <img src="/api/image/${selectedTest.transformation_applied.transformed_patch_path}" 
+                             alt="Transformed Patch" 
+                             onclick="openModal(this)"
+                             onerror="this.style.display='none'">
+                    </div>
+                </div>
             </div>
-            <div class="metric-row">
-                <span class="metric-label">Translation Error</span>
-                <span class="metric-value">${selectedTest.performance_metrics.translation_error_px.toFixed(2)}px</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Rotation Error</span>
-                <span class="metric-value">${selectedTest.performance_metrics.rotation_error_deg.toFixed(2)}°</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Confidence</span>
-                <span class="metric-value">${selectedTest.alignment_result.confidence.toFixed(3)}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Processing Time</span>
-                <span class="metric-value">${selectedTest.alignment_result.execution_time_ms.toFixed(1)}ms</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Status</span>
-                <span class="metric-value ${selectedTest.performance_metrics.success ? 'text-success' : 'text-error'}">
-                    ${selectedTest.performance_metrics.success ? 'Success' : 'Failed'}
-                </span>
+            
+            <!-- Row 2: Metrics Data -->
+            <div class="metrics-row">
+                <div class="metrics-panel">
+                    <h4 style="margin-bottom: var(--spacing-sm); color: var(--text-primary);">Performance Metrics</h4>
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <span class="metric-label">Algorithm</span>
+                            <span class="metric-value">${selectedTest.algorithm_name}</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Translation Error</span>
+                            <span class="metric-value">${selectedTest.performance_metrics.translation_error_px.toFixed(2)}px</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Rotation Error</span>
+                            <span class="metric-value">${selectedTest.performance_metrics.rotation_error_deg.toFixed(2)}°</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Confidence</span>
+                            <span class="metric-value">${selectedTest.alignment_result.confidence.toFixed(3)}</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Processing Time</span>
+                            <span class="metric-value">${selectedTest.alignment_result.execution_time_ms.toFixed(1)}ms</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Status</span>
+                            <span class="metric-value ${selectedTest.performance_metrics.success ? 'success' : 'failed'}">
+                                ${selectedTest.performance_metrics.success ? '✓ Success' : '✗ Failed'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     `;
