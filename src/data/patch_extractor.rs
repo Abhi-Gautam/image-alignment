@@ -1,3 +1,4 @@
+use crate::config::ImageConfig;
 use image::{GrayImage, ImageBuffer};
 use std::path::{Path, PathBuf};
 
@@ -47,9 +48,19 @@ impl PatchExtractor {
         patch_size: u32,
         count: u32,
     ) -> crate::Result<Vec<(GrayImage, u32, u32)>> {
+        Self::extract_good_patches_with_config(source_image, patch_size, count, &ImageConfig::default())
+    }
+
+    /// Extract multiple patches from an image with good feature content using config
+    pub fn extract_good_patches_with_config(
+        source_image: &GrayImage,
+        patch_size: u32,
+        count: u32,
+        config: &ImageConfig,
+    ) -> crate::Result<Vec<(GrayImage, u32, u32)>> {
         let mut patches = Vec::new();
         let half_size = patch_size / 2;
-        let min_variance = 100.0; // Minimum variance to ensure patch has features
+        let min_variance = config.variance_threshold; // Minimum variance to ensure patch has features
 
         let mut attempts = 0;
         let max_attempts = count * 10; // Try up to 10x the requested count

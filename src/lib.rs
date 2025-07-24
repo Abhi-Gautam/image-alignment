@@ -1,6 +1,7 @@
 pub mod algorithms;
 pub mod analysis;
 pub mod augmentation;
+pub mod config;
 pub mod dashboard;
 pub mod data;
 pub mod pipeline;
@@ -36,7 +37,3 @@ impl AlignmentResult {
 
 pub type Result<T> = anyhow::Result<T>;
 
-#[cfg(test)]
-mod tests {
-    // No unit tests in lib.rs - all tests are in tests/ directory
-}
