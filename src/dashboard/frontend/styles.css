@@ -344,6 +344,7 @@ label {
     padding: var(--spacing-lg);
     box-shadow: 0 1px 3px var(--shadow);
     margin-bottom: var(--spacing-lg);
+    overflow-x: auto;
 }
 
 .sessions-list {
@@ -365,7 +366,6 @@ label {
 
 .session-item:hover {
     border-color: var(--primary);
-    transform: translateX(2px);
 }
 
 .session-item.active {
@@ -452,7 +452,6 @@ label {
 
 .test-item:hover {
     border-color: var(--primary);
-    transform: translateX(2px);
 }
 
 .test-item.selected {
@@ -888,4 +887,229 @@ label {
 
 .gap-md {
     gap: var(--spacing-md);
+}
+
+/* Mode Toggle */
+.mode-toggle {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-md);
+}
+
+.mode-btn {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.mode-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.mode-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* Test Runner Section */
+.test-runner-section {
+    margin-top: var(--spacing-lg);
+}
+
+.test-runner-form {
+    background: var(--bg-secondary);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.form-group:first-child .form-row:first-child {
+    grid-column: 1 / -1;
+}
+
+.form-group label {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.form-group input[type="file"] {
+    padding: var(--spacing-sm);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
+}
+
+.form-group input[type="file"]:hover {
+    border-color: var(--primary);
+}
+
+.form-group select[multiple] {
+    min-height: 120px;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.form-group select[multiple] option {
+    padding: var(--spacing-xs);
+    margin: 2px 0;
+}
+
+.form-group select[multiple] option:checked {
+    background: var(--primary);
+    color: white;
+}
+
+.test-runner-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--spacing-lg);
+    margin-top: var(--spacing-lg);
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid var(--border);
+}
+
+#runTestBtn {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 150px;
+    justify-content: center;
+}
+
+.test-progress {
+    flex: 1;
+    max-width: 300px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    margin-bottom: var(--spacing-xs);
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--primary);
+    transition: width var(--transition-normal);
+    width: 0;
+}
+
+.progress-text {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+/* Multi-select dropdown styles */
+.multi-select-dropdown {
+    position: relative;
+    width: 100%;
+}
+
+.multi-select-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: border-color var(--transition-fast);
+}
+
+.multi-select-toggle:hover {
+    border-color: var(--primary);
+}
+
+.dropdown-arrow {
+    font-size: 0.75rem;
+    transition: transform var(--transition-fast);
+}
+
+.multi-select-toggle.open .dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.multi-select-options {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-top: var(--spacing-xs);
+    z-index: 100;
+    box-shadow: 0 4px 12px var(--shadow);
+}
+
+.multi-select-options label {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-sm);
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background-color var(--transition-fast);
+}
+
+.multi-select-options label:hover {
+    background: var(--bg-secondary);
+}
+
+.multi-select-options input[type="checkbox"] {
+    margin-right: var(--spacing-sm);
+    cursor: pointer;
+}
+
+/* Responsive adjustments for test runner */
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .test-runner-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .test-progress {
+        max-width: none;
+    }
 }
