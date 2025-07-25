@@ -738,7 +738,7 @@ impl VisualTester {
 
         // Create per-test algorithm log file (before moving alignment_result)
         let correlation_uuid = correlation_id.parse::<uuid::Uuid>().ok();
-        self.create_algorithm_log_file(&algorithm_log_path, algorithm.name(), &test_id, correlation_uuid, &alignment_result, scenario)?;
+        self.create_algorithm_log_file(&algorithm_log_path, algorithm.name(), &test_id, correlation_uuid, &alignment_result, scenario, patch_location, patch_size)?;
 
         // Create test report with correlation tracking
         let report = TestReport {
@@ -1345,6 +1345,8 @@ impl VisualTester {
         correlation_id: Option<uuid::Uuid>,
         alignment_result: &crate::pipeline::AlignmentResult,
         scenario: &TestScenario,
+        patch_location: (u32, u32),
+        patch_size: u32,
     ) -> anyhow::Result<()> {
         use std::io::Write;
         use crate::logging::create_test_log_writer;
@@ -1364,11 +1366,27 @@ impl VisualTester {
         writeln!(writer)?;
         
         // Write scenario details
+        // Write ground truth information
+        writeln!(writer, "=== Ground Truth Information ===")?;
+        writeln!(writer, "Original Patch Location: ({}, {})", patch_location.0, patch_location.1)?;
+        writeln!(writer, "Original Patch Size: {}x{}", patch_size, patch_size)?;
+        writeln!(writer, "Patch Center: ({}, {})", 
+            patch_location.0 + patch_size/2, 
+            patch_location.1 + patch_size/2)?;
+        writeln!(writer)?;
+        
+        // Write test scenario details
         writeln!(writer, "=== Test Scenario Details ===")?;
         writeln!(writer, "Noise Type: {:?}", scenario.noise_type)?;
         writeln!(writer, "Rotation: {}°", scenario.rotation_deg)?;
         writeln!(writer, "Translation: ({}, {})", scenario.translation.0, scenario.translation.1)?;
         writeln!(writer, "Scale Factor: {}", scenario.scale_factor)?;
+        
+        // Calculate expected location after transformation
+        let expected_x = patch_location.0 as i32 + scenario.translation.0;
+        let expected_y = patch_location.1 as i32 + scenario.translation.1;
+        writeln!(writer)?;
+        writeln!(writer, "Expected Location After Transform: ({}, {})", expected_x, expected_y)?;
         writeln!(writer)?;
         
         // Write algorithm results
@@ -1379,6 +1397,21 @@ impl VisualTester {
         writeln!(writer, "Detected Size: ({}, {})", alignment_result.location.width, alignment_result.location.height)?;
         writeln!(writer, "Execution Time: {:.3}ms", alignment_result.execution_time_ms)?;
         writeln!(writer, "Algorithm Used: {}", alignment_result.algorithm_name)?;
+        writeln!(writer)?;
+        
+        // Calculate error metrics
+        let detected_x = alignment_result.location.x as i32;
+        let detected_y = alignment_result.location.y as i32;
+        let error_x = detected_x - expected_x;
+        let error_y = detected_y - expected_y;
+        let total_error = ((error_x * error_x + error_y * error_y) as f32).sqrt();
+        
+        writeln!(writer, "=== Error Analysis ===")?;
+        writeln!(writer, "Detection Error X: {} pixels", error_x)?;
+        writeln!(writer, "Detection Error Y: {} pixels", error_y)?;
+        writeln!(writer, "Total Translation Error: {:.2} pixels", total_error)?;
+        writeln!(writer, "Success Threshold: <= 10 pixels")?;
+        writeln!(writer, "Test Result: {}", if total_error <= 10.0 { "PASSED" } else { "FAILED" })?;
         
         if let Some(ref transform) = alignment_result.transformation {
             writeln!(writer)?;
