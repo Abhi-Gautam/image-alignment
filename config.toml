@@ -28,15 +28,6 @@ max_features = 1000
 distance_threshold = 100.0
 ratio_threshold = 0.7
 
-[algorithms.ecc]
-max_iterations = 100
-termination_eps = 1e-6
-gaussian_filter_size = 1
-motion_type = 2
-confidence_threshold = 0.5
-min_gradient_magnitude = 0.1
-convergence_threshold = 1e-8
-warp_matrix_init_scale = 1.0
 
 [algorithms.sift]
 n_features = 1000
@@ -136,7 +127,6 @@ min_confidence = 0.3
 orb = 0.5
 template = 0.7
 akaze = 0.6
-ecc = 0.5
 sift = 0.6
 
 [validation.performance_targets]

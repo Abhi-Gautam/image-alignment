@@ -22,7 +22,6 @@ pub struct AlgorithmConfig {
     pub orb: OrbConfig,
     pub template: TemplateConfig,
     pub akaze: AkazeConfig,
-    pub ecc: EccConfig,
     pub sift: SiftConfig,
     pub ransac: RansacConfig,
 }
@@ -61,17 +60,6 @@ pub struct AkazeConfig {
     pub ratio_threshold: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EccConfig {
-    pub max_iterations: i32,
-    pub termination_eps: f64,
-    pub gaussian_filter_size: i32,
-    pub motion_type: i32,
-    pub confidence_threshold: f32,
-    pub min_gradient_magnitude: f32,
-    pub convergence_threshold: f64,
-    pub warp_matrix_init_scale: f64,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiftConfig {
@@ -258,20 +246,6 @@ impl Default for AkazeConfig {
     }
 }
 
-impl Default for EccConfig {
-    fn default() -> Self {
-        Self {
-            max_iterations: 100,
-            termination_eps: 1e-6,
-            gaussian_filter_size: 1,
-            motion_type: 2,
-            confidence_threshold: 0.5,
-            min_gradient_magnitude: 0.1,
-            convergence_threshold: 1e-8,
-            warp_matrix_init_scale: 1.0,
-        }
-    }
-}
 
 impl Default for SiftConfig {
     fn default() -> Self {
@@ -427,7 +401,6 @@ impl Default for ValidationConfig {
         confidence_thresholds.insert("orb".to_string(), 0.5);
         confidence_thresholds.insert("template".to_string(), 0.7);
         confidence_thresholds.insert("akaze".to_string(), 0.6);
-        confidence_thresholds.insert("ecc".to_string(), 0.5);
         confidence_thresholds.insert("sift".to_string(), 0.6);
 
         Self {

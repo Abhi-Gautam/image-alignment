@@ -111,10 +111,10 @@ function clearFilters() {
     document.querySelectorAll('#filterTransformationsDropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
     document.getElementById('successOnlyFilter').checked = false;
     
-    // Update display text
-    updateMultiSelect('filterAlgorithms');
-    updateMultiSelect('filterPatchSizes');
-    updateMultiSelect('filterTransformations');
+    // Update display text (skip filters to avoid triggering during clear)
+    updateMultiSelect('filterAlgorithms', true);
+    updateMultiSelect('filterPatchSizes', true);
+    updateMultiSelect('filterTransformations', true);
     
     applyFilters();
 }
@@ -178,7 +178,7 @@ function toggleDropdown(type) {
     }
 }
 
-function updateMultiSelect(type) {
+function updateMultiSelect(type, skipFilters = false) {
     const dropdown = document.getElementById(type + 'Dropdown');
     const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:checked');
     const textElement = document.getElementById(type + 'Text');
@@ -218,15 +218,18 @@ function updateMultiSelect(type) {
         textElement.textContent = values.join(', ');
     }
     
-    // Apply filters if it's a filter dropdown
-    if (type.startsWith('filter')) {
+    // Apply filters if it's a filter dropdown and not during initialization
+    if (type.startsWith('filter') && !skipFilters) {
         applyFilters();
     }
 }
 
 // Close dropdowns when clicking outside
 document.addEventListener('click', function(event) {
-    if (!event.target.closest('.multi-select-dropdown')) {
+    // Don't close dropdown if clicking on checkbox or label inside dropdown
+    if (!event.target.closest('.multi-select-dropdown') && 
+        !event.target.matches('input[type="checkbox"]') && 
+        !event.target.closest('label')) {
         document.querySelectorAll('.multi-select-options').forEach(dropdown => {
             dropdown.style.display = 'none';
             dropdown.previousElementSibling.classList.remove('open');

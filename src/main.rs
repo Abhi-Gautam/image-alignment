@@ -34,7 +34,7 @@ enum Commands {
         #[arg(short = 'T', long)]
         target: PathBuf,
 
-        /// Algorithm to use for alignment (orb, ncc, ssd, ccorr, akaze, ecc, sift)
+        /// Algorithm to use for alignment (orb, ncc, ssd, ccorr, akaze, sift)
         #[arg(short, long, default_value = "orb")]
         algorithm: String,
 
@@ -87,7 +87,7 @@ enum Commands {
         #[arg(short, long)]
         dataset: PathBuf,
 
-        /// Algorithms to benchmark (orb, ncc, ssd, ccorr, akaze, ecc, sift, all)
+        /// Algorithms to benchmark (orb, ncc, ssd, ccorr, akaze, sift, all)
         #[arg(short, long, default_value = "all")]
         algorithms: String,
 
@@ -239,16 +239,12 @@ fn create_algorithm_and_align(
             let aligner = algorithms::OpenCVAKAZE::new()?;
             aligner.align(target_mat, template_mat)?
         }
-        "ecc" | "opencv-ecc" => {
-            let aligner = algorithms::OpenCVECC::new();
-            aligner.align(target_mat, template_mat)?
-        }
         "sift" | "opencv-sift" => {
             let aligner = algorithms::OpenCVSIFT::new()?;
             aligner.align(target_mat, template_mat)?
         }
         _ => return Err(anyhow::anyhow!(
-            "Unknown algorithm: {}. Available: orb, ncc, ssd, ccorr, akaze, ecc, sift",
+            "Unknown algorithm: {}. Available: orb, ncc, ssd, ccorr, akaze, sift",
             algorithm
         )),
     };
@@ -357,7 +353,7 @@ fn handle_compare(
         match create_algorithm_and_align(algo, &target_mat, &template_mat) {
             Ok(result) => results.push(result),
             Err(_) => {
-                log::warn!("Unknown algorithm: {}, skipping. Available: orb, ncc, ssd, ccorr, akaze, ecc, sift", algo);
+                log::warn!("Unknown algorithm: {}, skipping. Available: orb, ncc, ssd, ccorr, akaze, sift", algo);
                 continue;
             }
         }
@@ -482,7 +478,7 @@ fn handle_test(
             let transformed_mat = grayimage_to_mat(&transformed)?;
 
             // Test OpenCV algorithms
-            for algorithm in &["orb", "ncc", "ssd", "akaze", "ecc", "sift"] {
+            for algorithm in &["orb", "ncc", "ssd", "akaze", "sift"] {
                 println!("    🎯 Testing {} algorithm...", algorithm);
 
                 let result = match create_algorithm_and_align(algorithm, &transformed_mat, &patch_mat) {

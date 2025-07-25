@@ -167,7 +167,13 @@ function populateFilterOptions() {
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.value = algorithm;
+        checkbox.checked = selectedFilterAlgorithms.includes(algorithm);
         checkbox.onchange = () => updateMultiSelect('filterAlgorithms');
+        
+        // Prevent dropdown from closing when clicking on checkbox or label
+        label.onclick = (e) => e.stopPropagation();
+        checkbox.onclick = (e) => e.stopPropagation();
+        
         label.appendChild(checkbox);
         label.appendChild(document.createTextNode(' ' + algorithm));
         algorithmDropdown.appendChild(label);
@@ -179,7 +185,13 @@ function populateFilterOptions() {
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.value = size;
+        checkbox.checked = selectedFilterPatchSizes.includes(size);
         checkbox.onchange = () => updateMultiSelect('filterPatchSizes');
+        
+        // Prevent dropdown from closing when clicking on checkbox or label
+        label.onclick = (e) => e.stopPropagation();
+        checkbox.onclick = (e) => e.stopPropagation();
+        
         label.appendChild(checkbox);
         label.appendChild(document.createTextNode(' ' + size));
         patchSizeDropdown.appendChild(label);
@@ -191,9 +203,20 @@ function populateFilterOptions() {
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.value = transformation;
+        checkbox.checked = selectedFilterTransformations.includes(transformation);
         checkbox.onchange = () => updateMultiSelect('filterTransformations');
+        
+        // Prevent dropdown from closing when clicking on checkbox or label
+        label.onclick = (e) => e.stopPropagation();
+        checkbox.onclick = (e) => e.stopPropagation();
+        
         label.appendChild(checkbox);
         label.appendChild(document.createTextNode(' ' + transformation.replace(/_/g, ' ')));
         transformationDropdown.appendChild(label);
     });
+    
+    // Update display text for filter dropdowns to reflect current selections (skip filters to avoid loop)
+    updateMultiSelect('filterAlgorithms', true);
+    updateMultiSelect('filterPatchSizes', true);
+    updateMultiSelect('filterTransformations', true);
 }

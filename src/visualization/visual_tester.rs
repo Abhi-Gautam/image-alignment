@@ -74,7 +74,6 @@ impl VisualTester {
             algorithms.push(Box::new(akaze));
         }
 
-        algorithms.push(Box::new(OpenCVECC::new()));
 
         if let Ok(sift) = OpenCVSIFT::new() {
             algorithms.push(Box::new(sift));
@@ -110,7 +109,6 @@ impl VisualTester {
             algorithms.push(Box::new(akaze));
         }
 
-        algorithms.push(Box::new(OpenCVECC::with_config(config.algorithms.ecc.clone())));
 
         if let Ok(sift) = OpenCVSIFT::with_config(config.algorithms.sift.clone()) {
             algorithms.push(Box::new(sift));
@@ -1062,8 +1060,6 @@ impl VisualTester {
                 || algo_name.contains("AKAZE")
             {
                 ("Feature-based", "Feature Reliability")
-            } else if algo_name.contains("ECC") {
-                ("Geometric Transformation", "Transform Quality")
             } else {
                 ("Unknown", "Unknown")
             };
