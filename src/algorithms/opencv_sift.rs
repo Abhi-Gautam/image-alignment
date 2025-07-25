@@ -1,4 +1,5 @@
 use crate::config::SiftConfig;
+use crate::logging::{AlgorithmSpan, get_correlation_id, metrics::Timer};
 use crate::pipeline::{AlgorithmConfig, AlignmentAlgorithm, AlignmentResult, ComplexityClass};
 use crate::utils::estimate_transformation_ransac;
 use crate::Result;
@@ -8,6 +9,7 @@ use opencv::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::Instant;
+use tracing::{info, debug, warn, error};
 
 /// SIFT (Scale-Invariant Feature Transform) feature detector and matcher
 /// SIFT is highly robust to scale, rotation, and illumination changes
@@ -250,13 +252,58 @@ impl AlignmentAlgorithm for OpenCVSIFT {
     }
 
     fn align(&self, search_image: &Mat, patch: &Mat) -> crate::Result<AlignmentResult> {
+        // Create comprehensive algorithm execution span
+        let algorithm_span = AlgorithmSpan::new(
+            "SIFT",
+            None,
+            Some((patch.cols() as u32, patch.rows() as u32)),
+            get_correlation_id(),
+        );
+        let _span_guard = algorithm_span.enter();
+        
         let start = Instant::now();
+        
+        info!(
+            algorithm = "SIFT",
+            search_image_size = format!("{}x{}", search_image.cols(), search_image.rows()),
+            patch_size = format!("{}x{}", patch.cols(), patch.rows()),
+            n_features = self.config.n_features,
+            contrast_threshold = self.config.contrast_threshold,
+            edge_threshold = self.config.edge_threshold,
+            sigma = self.config.sigma,
+            "Starting SIFT feature-based alignment"
+        );
 
-        // Detect keypoints and compute descriptors
+        // Step 1: Feature detection and descriptor computation
+        debug!("Step 1: Detecting SIFT features and computing descriptors");
+        let _detection_timer = Timer::start("sift_feature_detection", get_correlation_id());
+        
         let (patch_kp, patch_desc) = self.detect_and_compute(patch)?;
         let (search_kp, search_desc) = self.detect_and_compute(search_image)?;
+        
+        // Record feature detection results
+        algorithm_span.record_feature_detection(
+            patch_kp.len() + search_kp.len(),
+            (patch_desc.rows() + search_desc.rows()) as usize,
+        );
+        
+        info!(
+            patch_keypoints = patch_kp.len(),
+            search_keypoints = search_kp.len(),
+            patch_descriptors = patch_desc.rows(),
+            search_descriptors = search_desc.rows(),
+            "SIFT feature detection completed"
+        );
 
         if patch_kp.is_empty() || search_kp.is_empty() {
+            warn!(
+                patch_features = patch_kp.len(),
+                search_features = search_kp.len(),
+                "Insufficient SIFT features detected - alignment failed"
+            );
+            
+            algorithm_span.record_result(false, 0.0, "No features detected");
+            
             return Ok(AlignmentResult {
                 location: crate::pipeline::SerializableRect {
                     x: 0,
@@ -273,10 +320,30 @@ impl AlignmentAlgorithm for OpenCVSIFT {
             });
         }
 
-        // Match features
+        // Step 2: Feature matching
+        debug!("Step 2: Matching SIFT features between patch and search image");
+        let _matching_timer = Timer::start("sift_feature_matching", get_correlation_id());
+        
         let matches = self.match_features(&patch_desc, &search_desc)?;
+        
+        // Record matching results
+        algorithm_span.record_matching(
+            matches.len(),
+            matches.len(), // For SIFT, all raw matches are good matches after filtering  
+            if matches.is_empty() { 0.0 } else { 1.0 - (matches.iter().map(|m| m.distance as f32).sum::<f32>() / matches.len() as f32) / 256.0 },
+        );
+        
+        info!(
+            raw_matches = matches.len(),
+            distance_threshold = self.config.distance_threshold,
+            "SIFT feature matching completed"
+        );
 
         if matches.is_empty() {
+            warn!("No valid SIFT feature matches found - alignment failed");
+            
+            algorithm_span.record_result(false, 0.0, "No matches found");
+            
             return Ok(AlignmentResult {
                 location: crate::pipeline::SerializableRect {
                     x: 0,
@@ -293,25 +360,36 @@ impl AlignmentAlgorithm for OpenCVSIFT {
             });
         }
 
-        // Estimate transformation
+        // Step 3: Geometric transformation estimation with RANSAC
+        debug!("Step 3: Estimating geometric transformation using RANSAC");
+        let _ransac_timer = Timer::start("sift_ransac_estimation", get_correlation_id());
+        
         let patch_kp_vec = patch_kp.to_vec();
         let search_kp_vec = search_kp.to_vec();
         let (tx, ty, rotation, scale, confidence) =
             self.estimate_transformation(&patch_kp_vec, &search_kp_vec, &matches)?;
 
-        // Debug RANSAC output
-        log::info!(
-            "SIFT RANSAC result: tx={}, ty={}, rotation={}, confidence={}",
-            tx,
-            ty,
-            rotation,
-            confidence
+        info!(
+            translation = format!("({:.2}, {:.2})", tx, ty),
+            rotation_degrees = format!("{:.2}°", rotation),
+            scale = format!("{:.3}x", scale),
+            confidence = format!("{:.3}", confidence),
+            "SIFT RANSAC transformation estimation completed"
         );
 
         // Calculate match location in search image
         // RANSAC tx,ty represents the displacement between keypoints
         let match_x = tx as i32;
         let match_y = ty as i32;
+
+        // Record detailed spatial alignment result
+        algorithm_span.record_detailed_result(
+            (tx, ty),
+            rotation,
+            scale,
+            confidence,
+            (match_x, match_y),
+        );
 
         let mut metadata = HashMap::new();
         metadata.insert(
@@ -343,6 +421,15 @@ impl AlignmentAlgorithm for OpenCVSIFT {
             serde_json::Value::from(self.config.sigma),
         );
 
+        let execution_time = start.elapsed().as_secs_f64() * 1000.0;
+        
+        info!(
+            execution_time_ms = format!("{:.2}", execution_time),
+            final_confidence = format!("{:.3}", confidence),
+            match_location = format!("({}, {})", match_x, match_y),
+            "SIFT alignment completed successfully"
+        );
+
         Ok(AlignmentResult {
             location: crate::pipeline::SerializableRect {
                 x: match_x.max(0),
@@ -352,7 +439,7 @@ impl AlignmentAlgorithm for OpenCVSIFT {
             },
             score: confidence as f64,
             confidence: confidence as f64,
-            execution_time_ms: start.elapsed().as_secs_f64() * 1000.0,
+            execution_time_ms: execution_time,
             algorithm_name: AlignmentAlgorithm::name(self).to_string(),
             metadata,
             transformation: Some(crate::pipeline::TransformParams {

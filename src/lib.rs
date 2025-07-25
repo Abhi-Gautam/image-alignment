@@ -4,6 +4,7 @@ pub mod augmentation;
 pub mod config;
 pub mod dashboard;
 pub mod data;
+pub mod logging;
 pub mod pipeline;
 pub mod utils;
 pub mod visualization;

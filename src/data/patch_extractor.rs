@@ -93,7 +93,7 @@ impl PatchExtractor {
     }
 
     /// Calculate the variance of pixel intensities (measure of contrast)
-    fn calculate_variance(image: &GrayImage) -> f32 {
+    pub fn calculate_variance(image: &GrayImage) -> f32 {
         let pixels: Vec<f32> = image.pixels().map(|p| p[0] as f32).collect();
         let mean = pixels.iter().sum::<f32>() / pixels.len() as f32;
         let variance =

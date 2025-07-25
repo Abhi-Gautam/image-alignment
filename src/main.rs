@@ -135,17 +135,23 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Load configuration from file or use default
-    let _config = load_config_or_default(cli.config.as_ref().map(|p| p.to_str().unwrap()));
+    let config = load_config_or_default(cli.config.as_ref().map(|p| p.to_str().unwrap()));
 
-    // Initialize logging
-    env_logger::Builder::from_default_env()
-        .filter_level(match cli.verbose {
-            0 => log::LevelFilter::Warn,
-            1 => log::LevelFilter::Info,
-            2 => log::LevelFilter::Debug,
-            _ => log::LevelFilter::Trace,
-        })
-        .init();
+    // Override logging level based on CLI verbosity if specified
+    let mut logging_config = config.logging.clone();
+    if cli.verbose > 0 {
+        logging_config.global_level = match cli.verbose {
+            1 => "info".to_string(),
+            2 => "debug".to_string(),
+            _ => "trace".to_string(),
+        };
+        logging_config.console_output = true;
+        logging_config.include_file_location = cli.verbose >= 3;
+    }
+
+    // Initialize structured logging
+    image_alignment::logging::init_logging(&logging_config)
+        .expect("Failed to initialize logging system");
 
     match cli.command {
         Commands::Align {

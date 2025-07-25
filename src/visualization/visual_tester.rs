@@ -1,14 +1,19 @@
 use crate::algorithms::*;
 use crate::config::Config;
+use crate::logging::{TestSessionSpan, new_correlation_id, set_correlation_id, get_correlation_id};
 use crate::pipeline::{AlignmentAlgorithm, AlignmentResult};
 use crate::utils::image_conversion::grayimage_to_mat;
 use image::{imageops, GrayImage, Luma, Rgb, RgbImage};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use tracing::{info, debug, warn, error};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestReport {
     pub test_id: String,
+    pub session_id: String,
+    pub correlation_id: String,
     pub algorithm_name: String,
     pub original_image_path: String,
     pub patch_info: PatchInfo,
@@ -16,6 +21,7 @@ pub struct TestReport {
     pub alignment_result: AlignmentResult,
     pub visual_outputs: VisualOutputs,
     pub performance_metrics: PerformanceMetrics,
+    pub log_file_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,46 +134,78 @@ impl VisualTester {
         patch_sizes: Option<&[u32]>,
         scenarios: Option<&[String]>,
     ) -> crate::Result<Vec<TestReport>> {
-        println!(
-            "🔬 Starting comprehensive visual test on: {}",
-            sem_image_path.display()
+        // Create test session with correlation tracking
+        let session_id = Uuid::new_v4();
+        let session_correlation_id = new_correlation_id();
+        
+        let test_session_span = TestSessionSpan::new("visual_test", session_id);
+        let _session_guard = test_session_span.enter();
+        
+        // Create session-specific log directory
+        let session_log_dir = self.output_dir.join("logs").join(format!("session_{}", session_id));
+        std::fs::create_dir_all(&session_log_dir)?;
+        
+        info!(
+            session_id = %session_id,
+            correlation_id = %session_correlation_id,
+            sem_image_path = %sem_image_path.display(),
+            output_dir = %self.output_dir.display(),
+            "Starting comprehensive visual test session"
         );
 
         // Load the SEM image
         let sem_image = image::open(sem_image_path)?.to_luma8();
-        println!(
-            "📸 Loaded SEM image: {}x{}",
-            sem_image.width(),
-            sem_image.height()
+        
+        info!(
+            image_width = sem_image.width(),
+            image_height = sem_image.height(),
+            "Loaded SEM image successfully"
         );
+        
+        // Record test configuration in span
+        let config_json = serde_json::json!({
+            "patch_sizes": patch_sizes.unwrap_or(&[32, 64, 128]),
+            "scenarios": scenarios.unwrap_or(&["default".to_string()]),
+            "algorithms": self.algorithms.iter().map(|a| a.name()).collect::<Vec<_>>(),
+            "output_directory": self.output_dir.to_string_lossy()
+        });
+        test_session_span.record_config("comprehensive_visual_test", config_json);
 
         // Extract multiple patches of different sizes
         let default_patch_sizes = vec![32, 64, 128];
         let patch_sizes = patch_sizes.unwrap_or(&default_patch_sizes);
         let mut all_reports = Vec::new();
 
+        let mut total_tests = 0;
+        let mut successful_tests = 0;
+
         for &patch_size in patch_sizes {
-            println!(
-                "\n🔍 Testing with patch size: {}x{}",
-                patch_size, patch_size
+            debug!(
+                patch_size = patch_size,
+                "Starting tests for patch size"
             );
 
             // Extract 3 patches of this size
             let patches = self.extract_good_patches(&sem_image, patch_size, 3)?;
 
             if patches.is_empty() {
-                println!(
-                    "  ⚠️  Skipping patch size {}x{} - image too small ({}x{})",
-                    patch_size,
-                    patch_size,
-                    sem_image.width(),
-                    sem_image.height()
+                warn!(
+                    patch_size = patch_size,
+                    image_width = sem_image.width(),
+                    image_height = sem_image.height(),
+                    "Skipping patch size - image too small"
                 );
                 continue;
             }
 
             for (patch_idx, (patch, x, y)) in patches.into_iter().enumerate() {
                 let test_base_id = format!("{}x{}_patch{}", patch_size, patch_size, patch_idx + 1);
+
+                debug!(
+                    test_base_id = %test_base_id,
+                    patch_location = format!("({}, {})", x, y),
+                    "Extracted patch for testing"
+                );
 
                 // Test different noise and transformation scenarios
                 let test_scenarios = self.create_test_scenarios(scenarios);
@@ -179,13 +217,32 @@ impl VisualTester {
 
                     // Test all algorithms
                     for algorithm in &self.algorithms {
+                        // Create unique correlation ID for each test iteration
+                        let test_correlation_id = new_correlation_id();
+                        set_correlation_id(test_correlation_id);
+                        
                         let test_id =
                             format!("{}_{}_{}", test_base_id, scenario.name, algorithm.name());
 
-                        println!("  🧪 Testing: {}", test_id);
+                        debug!(
+                            test_id = %test_id,
+                            algorithm = algorithm.name(),
+                            scenario = %scenario.name,
+                            correlation_id = %test_correlation_id,
+                            "Starting individual algorithm test"
+                        );
+
+                        // Record test iteration in session span
+                        test_session_span.record_iteration(
+                            total_tests,
+                            algorithm.name(),
+                            true // We'll update this based on actual result
+                        );
 
                         let report = self.run_single_test(
                             &test_id,
+                            &session_id.to_string(),
+                            &test_correlation_id.to_string(),
                             sem_image_path,
                             &sem_image,
                             &patch,
@@ -195,14 +252,53 @@ impl VisualTester {
                             algorithm.as_ref(),
                         )?;
 
+                        // Update test counters
+                        total_tests += 1;
+                        if report.performance_metrics.success {
+                            successful_tests += 1;
+                        }
+
+                        debug!(
+                            test_id = %test_id,
+                            success = report.performance_metrics.success,
+                            confidence = report.alignment_result.confidence,
+                            "Test iteration completed"
+                        );
+
                         all_reports.push(report);
                     }
                 }
             }
         }
 
-        // Generate summary report
-        self.generate_summary_report(&all_reports)?;
+        // Record session completion in span
+        test_session_span.record_completion(total_tests, successful_tests);
+
+        // Generate summary report with session correlation
+        info!(
+            session_id = %session_id,
+            total_tests = total_tests,
+            successful_tests = successful_tests,
+            success_rate = if total_tests > 0 { (successful_tests as f64) / (total_tests as f64) * 100.0 } else { 0.0 },
+            "Visual test session completed"
+        );
+
+        self.generate_summary_report(&all_reports, &session_id.to_string())?;
+
+        // Save session metadata
+        let session_metadata = serde_json::json!({
+            "session_id": session_id.to_string(),
+            "correlation_id": session_correlation_id.to_string(),
+            "total_tests": total_tests,
+            "successful_tests": successful_tests,
+            "success_rate": if total_tests > 0 { (successful_tests as f64) / (total_tests as f64) * 100.0 } else { 0.0 },
+            "algorithms_tested": self.algorithms.iter().map(|a| a.name()).collect::<Vec<_>>(),
+            "patch_sizes": patch_sizes,
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        });
+
+        let session_file = self.output_dir.join(format!("session_{}_metadata.json", session_id));
+        std::fs::write(session_file, serde_json::to_string_pretty(&session_metadata)?)?;
 
         Ok(all_reports)
     }
@@ -519,6 +615,8 @@ impl VisualTester {
     fn run_single_test(
         &self,
         test_id: &str,
+        session_id: &str,
+        correlation_id: &str,
         sem_image_path: &Path,
         sem_image: &GrayImage,
         original_patch: &GrayImage,
@@ -527,17 +625,42 @@ impl VisualTester {
         scenario: &TestScenario,
         algorithm: &dyn AlignmentAlgorithm,
     ) -> crate::Result<TestReport> {
-        // Create test-specific directory
+        // Create test-specific directory and log files
         let test_dir = self.output_dir.join(test_id);
         std::fs::create_dir_all(&test_dir)?;
+        
+        // Create per-algorithm log file
+        let algorithm_log_path = test_dir.join(format!("{}_algorithm.log", algorithm.name().to_lowercase()));
+        let algorithm_log_path_str = algorithm_log_path.to_string_lossy().to_string();
+        
+        info!(
+            test_id = %test_id,
+            algorithm = algorithm.name(),
+            patch_location = format!("({}, {})", patch_location.0, patch_location.1),
+            scenario = %scenario.name,
+            log_file = %algorithm_log_path_str,
+            "Starting single algorithm test"
+        );
 
         // Save original patch
         let patch_path = test_dir.join("1_original_patch.png");
         original_patch.save(&patch_path)?;
+        
+        debug!(
+            patch_path = %patch_path.display(),
+            patch_size = format!("{}x{}", original_patch.width(), original_patch.height()),
+            "Saved original patch"
+        );
 
         // Save transformed patch
         let transformed_patch_path = test_dir.join("2_transformed_patch.png");
         transformed_patch.save(&transformed_patch_path)?;
+        
+        debug!(
+            transformed_patch_path = %transformed_patch_path.display(),
+            transformation = %scenario.name,
+            "Saved transformed patch"
+        );
 
         // Convert patches to Mat format for the new pipeline
         let _original_mat = grayimage_to_mat(original_patch)?;
@@ -546,10 +669,30 @@ impl VisualTester {
         // Convert the full search image to Mat for alignment
         let search_mat = grayimage_to_mat(sem_image)?;
 
+        // Set patch context for spatial logging
+        let patch_context = crate::logging::PatchContext {
+            extracted_from: patch_location,
+            patch_size: (original_patch.width(), original_patch.height()),
+            source_image_size: (sem_image.width(), sem_image.height()),
+            variance: crate::data::PatchExtractor::calculate_variance(original_patch),
+        };
+        crate::logging::set_patch_context(patch_context);
+
         // Run alignment using the new signature
         // The algorithm searches for the transformed patch in the full SEM image
         // We expect it to find the patch near the original location since it's the same physical location
+        debug!("Starting algorithm alignment");
         let mut alignment_result = algorithm.align(&search_mat, &transformed_mat)?;
+        
+        // Clear patch context after alignment
+        crate::logging::clear_patch_context();
+        
+        info!(
+            detected_location = format!("({}, {})", alignment_result.location.x, alignment_result.location.y),
+            confidence = alignment_result.confidence,
+            execution_time_ms = alignment_result.execution_time_ms,
+            "Algorithm alignment completed"
+        );
 
         // Update the transformation to include the expected location for proper error calculation
         if let Some(ref mut transform) = alignment_result.transformation {
@@ -586,10 +729,18 @@ impl VisualTester {
         // Calculate performance metrics
         let patch_size = original_patch.width(); // Assuming square patches
         let performance_metrics = self.calculate_performance_metrics(&alignment_result, patch_location, patch_size, scenario);
+        
+        debug!(
+            translation_error_px = performance_metrics.translation_error_px,
+            success = performance_metrics.success,
+            "Performance metrics calculated"
+        );
 
-        // Create test report
+        // Create test report with correlation tracking
         let report = TestReport {
             test_id: test_id.to_string(),
+            session_id: session_id.to_string(),
+            correlation_id: correlation_id.to_string(),
             algorithm_name: algorithm.name().to_string(),
             original_image_path: sem_image_path.to_string_lossy().to_string(),
             patch_info: PatchInfo {
@@ -608,12 +759,21 @@ impl VisualTester {
             alignment_result,
             visual_outputs,
             performance_metrics,
+            log_file_path: Some(algorithm_log_path_str),
         };
 
         // Save individual test report
         let report_path = test_dir.join("test_report.json");
         let report_json = serde_json::to_string_pretty(&report)?;
-        std::fs::write(report_path, report_json)?;
+        std::fs::write(&report_path, report_json)?;
+        
+        info!(
+            test_id = %test_id,
+            report_path = %report_path.display(),
+            success = report.performance_metrics.success,
+            confidence = report.alignment_result.confidence,
+            "Test completed and report saved"
+        );
 
         Ok(report)
     }
@@ -871,7 +1031,7 @@ impl VisualTester {
     }
 
     /// Generate summary report
-    fn generate_summary_report(&self, reports: &[TestReport]) -> crate::Result<()> {
+    fn generate_summary_report(&self, reports: &[TestReport], session_id: &str) -> crate::Result<()> {
         // First generate the aggregated statistics
         self.generate_aggregated_statistics(reports)?;
 
@@ -883,6 +1043,7 @@ impl VisualTester {
             "**Generated:** {}\n",
             chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
         ));
+        summary.push_str(&format!("**Session ID:** {}\n", session_id));
         summary.push_str(&format!("**Total Tests:** {}\n\n", reports.len()));
         summary.push_str(
             "**Note:** Aggregated statistics are available in `aggregated_statistics.json`\n\n",

@@ -1,10 +1,12 @@
 use crate::config::TemplateConfig;
+use crate::logging::{AlgorithmSpan, get_correlation_id, metrics::Timer};
 use crate::pipeline::{AlgorithmConfig, AlignmentAlgorithm, AlignmentResult, ComplexityClass};
 use opencv::core::{no_array, Mat, Point2i};
 use opencv::imgproc;
 use opencv::prelude::*;
 use std::collections::HashMap;
 use std::time::Instant;
+use tracing::{info, debug, warn, error};
 
 /// OpenCV-based template matching algorithms
 /// Uses real OpenCV's matchTemplate functionality
@@ -86,9 +88,38 @@ impl AlignmentAlgorithm for OpenCVTemplateMatcher {
     }
 
     fn align(&self, search_image: &Mat, patch: &Mat) -> crate::Result<AlignmentResult> {
+        // Create comprehensive algorithm execution span
+        let algorithm_name = match self.mode {
+            TemplateMatchMode::NormalizedCrossCorrelation => "Template-NCC",
+            TemplateMatchMode::SumOfSquaredDifferences => "Template-SSD", 
+            TemplateMatchMode::CorrelationCoefficient => "Template-CCORR",
+        };
+        
+        let algorithm_span = AlgorithmSpan::new(
+            algorithm_name,
+            None,
+            Some((patch.cols() as u32, patch.rows() as u32)),
+            get_correlation_id(),
+        );
+        let _span_guard = algorithm_span.enter();
+        
         let start = Instant::now();
+        
+        info!(
+            algorithm = algorithm_name,
+            search_image_size = format!("{}x{}", search_image.cols(), search_image.rows()),
+            patch_size = format!("{}x{}", patch.cols(), patch.rows()),
+            mode = ?self.mode,
+            "Starting template matching alignment"
+        );
 
         if patch.cols() > search_image.cols() || patch.rows() > search_image.rows() {
+            error!(
+                patch_size = format!("{}x{}", patch.cols(), patch.rows()),
+                search_size = format!("{}x{}", search_image.cols(), search_image.rows()),
+                "Patch larger than search image - alignment impossible"
+            );
+            
             return Ok(AlignmentResult {
                 location: crate::pipeline::SerializableRect {
                     x: 0,
@@ -105,7 +136,10 @@ impl AlignmentAlgorithm for OpenCVTemplateMatcher {
             });
         }
 
-        // Perform template matching
+        // Record template matching as "feature detection" stage
+        debug!("Step 1: Performing template matching");
+        let _timer = Timer::start("template_matching", get_correlation_id());
+        
         let mut result = Mat::default();
         imgproc::match_template(
             search_image,
@@ -114,6 +148,12 @@ impl AlignmentAlgorithm for OpenCVTemplateMatcher {
             self.mode_to_opencv(),
             &no_array(),
         )?;
+
+        // Record the template matching process
+        algorithm_span.record_feature_detection(
+            1, // Template matching produces 1 "feature" (the match location)
+            result.rows() as usize * result.cols() as usize, // Number of comparison points
+        );
 
         // Find the best match location
         let mut min_val = 0.0;
@@ -164,12 +204,28 @@ impl AlignmentAlgorithm for OpenCVTemplateMatcher {
             }
         };
 
+        // Record detailed spatial alignment result
+        algorithm_span.record_detailed_result(
+            (best_loc.x as f32, best_loc.y as f32),
+            0.0,  // Template matching doesn't detect rotation
+            1.0,  // Template matching doesn't detect scale
+            confidence as f32,
+            (best_loc.x, best_loc.y),
+        );
+
         let mut metadata = HashMap::new();
         metadata.insert(
             "match_method".to_string(),
             serde_json::Value::from(format!("{:?}", self.mode)),
         );
         metadata.insert("raw_score".to_string(), serde_json::Value::from(score));
+
+        info!(
+            final_location = format!("({}, {})", best_loc.x, best_loc.y),
+            confidence = format!("{:.3}", confidence),
+            raw_score = format!("{:.3}", score),
+            "Template matching alignment completed successfully"
+        );
 
         Ok(AlignmentResult {
             location: crate::pipeline::SerializableRect {

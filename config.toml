@@ -133,3 +133,20 @@ sift = 0.6
 target_processing_time_ms = 25.0
 target_accuracy_px = 0.05
 target_success_rate = 0.95
+
+[logging]
+global_level = "info"
+console_output = true
+log_directory = "logs"
+include_file_location = false
+algorithm_level = "debug"
+pipeline_level = "info"
+testing_level = "debug"
+dashboard_level = "info"
+
+[logging.rotation]
+max_file_size = 104857600  # 100MB
+max_file_age_hours = 24
+max_files = 10
+archive_directory = "logs/archive"
+compress_archives = true

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use crate::logging::LoggingConfig;
 
 pub mod manipulation;
 
@@ -14,6 +15,7 @@ pub struct Config {
     pub testing: TestingConfig,
     pub dashboard: DashboardConfig,
     pub validation: ValidationConfig,
+    pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -472,6 +474,11 @@ impl Config {
 
         if self.dashboard.default_port == 0 {
             errors.push("Dashboard port must be valid".to_string());
+        }
+
+        // Validate logging configuration
+        if let Err(logging_error) = self.logging.validate() {
+            errors.push(format!("Logging configuration error: {}", logging_error));
         }
 
         if errors.is_empty() {
