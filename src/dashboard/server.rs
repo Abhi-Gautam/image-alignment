@@ -69,9 +69,9 @@ impl DashboardState {
 /// API query parameters for filtering
 #[derive(Debug, Deserialize)]
 pub struct FilterParams {
-    pub algorithm: Option<String>,
-    pub patch_size: Option<String>,
-    pub transformation: Option<String>,
+    pub algorithms: Option<String>,  // comma-separated list
+    pub patch_sizes: Option<String>,  // comma-separated list
+    pub transformations: Option<String>,  // comma-separated list
     pub success_only: Option<bool>,
 }
 
@@ -243,28 +243,44 @@ async fn serve_index() -> Html<&'static str> {
 /// Filter dashboard data based on query parameters
 fn filter_dashboard_data(data: &DashboardData, params: &FilterParams) -> DashboardData {
     let mut filtered_data = data.clone();
+    
+    // Parse comma-separated lists
+    let selected_algorithms: Vec<String> = params.algorithms
+        .as_ref()
+        .map(|s| s.split(',').map(|a| a.trim().to_string()).collect())
+        .unwrap_or_default();
+    
+    let selected_patch_sizes: Vec<String> = params.patch_sizes
+        .as_ref()
+        .map(|s| s.split(',').map(|a| a.trim().to_string()).collect())
+        .unwrap_or_default();
+        
+    let selected_transformations: Vec<String> = params.transformations
+        .as_ref()
+        .map(|s| s.split(',').map(|a| a.trim().to_string()).collect())
+        .unwrap_or_default();
 
     for session in &mut filtered_data.test_sessions {
         session.test_results.retain(|test| {
-            // Filter by algorithm
-            if let Some(ref algorithm) = params.algorithm {
-                if test.algorithm_name != *algorithm {
+            // Filter by algorithms (if any selected)
+            if !selected_algorithms.is_empty() {
+                if !selected_algorithms.contains(&test.algorithm_name) {
                     return false;
                 }
             }
 
-            // Filter by patch size
-            if let Some(ref patch_size) = params.patch_size {
+            // Filter by patch sizes (if any selected)
+            if !selected_patch_sizes.is_empty() {
                 let test_patch_size =
                     format!("{}x{}", test.patch_info.size.0, test.patch_info.size.1);
-                if test_patch_size != *patch_size {
+                if !selected_patch_sizes.contains(&test_patch_size) {
                     return false;
                 }
             }
 
-            // Filter by transformation
-            if let Some(ref transformation) = params.transformation {
-                if test.transformation_applied.noise_parameters != *transformation {
+            // Filter by transformations (if any selected)
+            if !selected_transformations.is_empty() {
+                if !selected_transformations.contains(&test.transformation_applied.noise_parameters) {
                     return false;
                 }
             }
