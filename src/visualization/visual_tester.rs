@@ -736,6 +736,10 @@ impl VisualTester {
             "Performance metrics calculated"
         );
 
+        // Create per-test algorithm log file (before moving alignment_result)
+        let correlation_uuid = correlation_id.parse::<uuid::Uuid>().ok();
+        self.create_algorithm_log_file(&algorithm_log_path, algorithm.name(), &test_id, correlation_uuid, &alignment_result, scenario)?;
+
         // Create test report with correlation tracking
         let report = TestReport {
             test_id: test_id.to_string(),
@@ -1329,6 +1333,94 @@ impl VisualTester {
         let json = serde_json::to_string_pretty(&aggregated)?;
         std::fs::write(stats_path, json)?;
 
+        Ok(())
+    }
+
+    /// Create a per-test algorithm log file with execution details
+    fn create_algorithm_log_file(
+        &self,
+        log_file_path: &Path,
+        algorithm_name: &str,
+        test_id: &str,
+        correlation_id: Option<uuid::Uuid>,
+        alignment_result: &crate::pipeline::AlignmentResult,
+        scenario: &TestScenario,
+    ) -> anyhow::Result<()> {
+        use std::io::Write;
+        use crate::logging::create_test_log_writer;
+        
+        let mut writer = create_test_log_writer(log_file_path)?;
+        
+        // Write header
+        writeln!(writer, "=== Algorithm Execution Log ===")?;
+        writeln!(writer, "Test ID: {}", test_id)?;
+        writeln!(writer, "Algorithm: {}", algorithm_name)?;
+        writeln!(writer, "Scenario: {}", scenario.name)?;
+        if let Some(id) = correlation_id {
+            writeln!(writer, "Correlation ID: {}", id)?;
+        }
+        writeln!(writer, "Timestamp: {}", chrono::Utc::now().to_rfc3339())?;
+        writeln!(writer, "================================")?;
+        writeln!(writer)?;
+        
+        // Write scenario details
+        writeln!(writer, "=== Test Scenario Details ===")?;
+        writeln!(writer, "Noise Type: {:?}", scenario.noise_type)?;
+        writeln!(writer, "Rotation: {}°", scenario.rotation_deg)?;
+        writeln!(writer, "Translation: ({}, {})", scenario.translation.0, scenario.translation.1)?;
+        writeln!(writer, "Scale Factor: {}", scenario.scale_factor)?;
+        writeln!(writer)?;
+        
+        // Write algorithm results
+        writeln!(writer, "=== Algorithm Results ===")?;
+        writeln!(writer, "Score: {:.6}", alignment_result.score)?;
+        writeln!(writer, "Confidence: {:.6}", alignment_result.confidence)?;
+        writeln!(writer, "Detected Location: ({}, {})", alignment_result.location.x, alignment_result.location.y)?;
+        writeln!(writer, "Detected Size: ({}, {})", alignment_result.location.width, alignment_result.location.height)?;
+        writeln!(writer, "Execution Time: {:.3}ms", alignment_result.execution_time_ms)?;
+        writeln!(writer, "Algorithm Used: {}", alignment_result.algorithm_name)?;
+        
+        if let Some(ref transform) = alignment_result.transformation {
+            writeln!(writer)?;
+            writeln!(writer, "=== Transformation Parameters ===")?;
+            writeln!(writer, "Translation: ({:.3}, {:.3})", transform.translation.0, transform.translation.1)?;
+            writeln!(writer, "Rotation: {:.3}°", transform.rotation_degrees)?;
+            writeln!(writer, "Scale: {:.6}", transform.scale)?;
+            if let Some(skew) = transform.skew {
+                writeln!(writer, "Skew: ({:.6}, {:.6})", skew.0, skew.1)?;
+            }
+        }
+        
+        if !alignment_result.metadata.is_empty() {
+            writeln!(writer)?;
+            writeln!(writer, "=== Algorithm Metadata ===")?;
+            for (key, value) in &alignment_result.metadata {
+                writeln!(writer, "{}: {}", key, value)?;
+            }
+        }
+        
+        // Write timing information if available
+        if alignment_result.execution_time_ms > 0.0 {
+            writeln!(writer)?;
+            writeln!(writer, "=== Performance Metrics ===")?;
+            writeln!(writer, "Total Execution Time: {:.3}ms", alignment_result.execution_time_ms)?;
+            
+            // Add any additional performance breakdown if available in metadata
+            if let Some(feature_detection_time) = alignment_result.metadata.get("feature_detection_ms") {
+                writeln!(writer, "Feature Detection Time: {}", feature_detection_time)?;
+            }
+            if let Some(matching_time) = alignment_result.metadata.get("matching_ms") {
+                writeln!(writer, "Feature Matching Time: {}", matching_time)?;
+            }
+            if let Some(verification_time) = alignment_result.metadata.get("verification_ms") {
+                writeln!(writer, "Verification Time: {}", verification_time)?;
+            }
+        }
+        
+        writeln!(writer)?;
+        writeln!(writer, "=== End of Log ===")?;
+        
+        writer.flush()?;
         Ok(())
     }
 

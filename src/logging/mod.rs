@@ -13,6 +13,7 @@ pub mod rotation;
 use anyhow::Result;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 use uuid::Uuid;
+use std::collections::HashMap;
 
 pub use config::LoggingConfig;
 pub use spans::{AlgorithmSpan, PipelineSpan, TestSessionSpan};
@@ -34,6 +35,10 @@ pub struct PatchContext {
 thread_local! {
     static PATCH_CONTEXT: std::cell::RefCell<Option<PatchContext>> = std::cell::RefCell::new(None);
 }
+
+use std::sync::OnceLock;
+
+static GUARD: OnceLock<tracing_appender::non_blocking::WorkerGuard> = OnceLock::new();
 
 /// Initialize the logging system with the provided configuration
 pub fn init_logging(config: &LoggingConfig) -> Result<()> {
@@ -64,8 +69,12 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
 
     // File output layer
     if let Some(ref log_dir) = config.log_directory {
+        std::fs::create_dir_all(log_dir)?;
         let file_appender = tracing_appender::rolling::daily(log_dir, "alignment.log");
-        let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+        
+        // Store the guard to prevent it from being dropped
+        GUARD.set(guard).map_err(|_| anyhow::anyhow!("Failed to set guard"))?;
         
         let file_layer = fmt::layer()
             .with_writer(non_blocking)
@@ -127,6 +136,73 @@ pub fn clear_patch_context() {
     PATCH_CONTEXT.with(|patch_context| {
         *patch_context.borrow_mut() = None;
     });
+}
+
+/// Create a per-test file appender and return a writer
+pub fn create_test_log_writer(log_file_path: &std::path::Path) -> Result<Box<dyn std::io::Write + Send + Sync>> {
+    use std::fs::OpenOptions;
+    use std::io::BufWriter;
+    
+    // Ensure parent directory exists
+    if let Some(parent) = log_file_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    
+    // Create or truncate the log file
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(log_file_path)?;
+        
+    let writer = BufWriter::new(file);
+    Ok(Box::new(writer))
+}
+
+/// Write algorithm execution details to per-test log file
+pub fn write_algorithm_log(
+    log_file_path: &std::path::Path,
+    algorithm_name: &str,
+    test_id: &str,
+    correlation_id: Option<uuid::Uuid>,
+    logs: Vec<LogEntry>
+) -> Result<()> {
+    use std::io::Write;
+    
+    let mut writer = create_test_log_writer(log_file_path)?;
+    
+    // Write header
+    writeln!(writer, "=== Algorithm Execution Log ===")?;
+    writeln!(writer, "Test ID: {}", test_id)?;
+    writeln!(writer, "Algorithm: {}", algorithm_name)?;
+    if let Some(id) = correlation_id {
+        writeln!(writer, "Correlation ID: {}", id)?;
+    }
+    writeln!(writer, "Timestamp: {}", chrono::Utc::now().to_rfc3339())?;
+    writeln!(writer, "================================")?;
+    writeln!(writer)?;
+    
+    // Write log entries
+    for entry in logs {
+        writeln!(writer, "[{}] {}: {}", entry.timestamp, entry.level, entry.message)?;
+        if !entry.fields.is_empty() {
+            for (key, value) in entry.fields {
+                writeln!(writer, "  {}: {}", key, value)?;
+            }
+        }
+        writeln!(writer)?;
+    }
+    
+    writer.flush()?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: String,
+    pub message: String,
+    pub fields: HashMap<String, String>,
 }
 
 /// Create a span with correlation ID automatically included

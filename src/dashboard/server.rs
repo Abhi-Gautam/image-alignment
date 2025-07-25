@@ -117,6 +117,8 @@ impl DashboardServer {
             .route("/api/test-progress/:id", get(get_test_progress))
             // Static file serving for images
             .route("/api/image/*path", get(serve_image))
+            // Log serving for per-test logs
+            .route("/api/test-logs/:session_id/:test_id", get(serve_test_log))
             // Frontend routes
             .route("/", get(serve_index))
             .route("/dashboard", get(serve_index))
@@ -231,6 +233,74 @@ async fn serve_image(
         }
         Err(e) => {
             eprintln!("Failed to read image file {}: {}", full_path.display(), e);
+            Err(StatusCode::NOT_FOUND)
+        }
+    }
+}
+
+async fn serve_test_log(
+    State(_state): State<DashboardState>,
+    Path((session_id, test_id)): Path<(String, String)>,
+) -> Result<Response, StatusCode> {
+    // Construct the expected log file path
+    // Format: results/test_YYYYMMDD_HHMMSS/test_id/algorithm_algorithm.log
+    
+    // Find the test session directory by session ID pattern
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    let results_dir = current_dir.join("results");
+    
+    // Look for the session directory that contains this test
+    let mut log_file_path = None;
+    
+    if let Ok(entries) = std::fs::read_dir(&results_dir) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                let session_dir = entry.path();
+                let test_dir = session_dir.join(&test_id);
+                
+                if test_dir.exists() {
+                    // Look for algorithm log file in this test directory
+                    if let Ok(test_entries) = std::fs::read_dir(&test_dir) {
+                        for test_entry in test_entries.flatten() {
+                            if let Some(file_name) = test_entry.file_name().to_str() {
+                                if file_name.ends_with("_algorithm.log") {
+                                    log_file_path = Some(test_entry.path());
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if log_file_path.is_some() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    let log_path = match log_file_path {
+        Some(path) => path,
+        None => {
+            eprintln!("Log file not found for session: {}, test: {}", session_id, test_id);
+            return Err(StatusCode::NOT_FOUND);
+        }
+    };
+    
+    // Security check: ensure path is within results directory
+    if !log_path.starts_with(&results_dir) {
+        eprintln!("Unsafe log path requested: {}", log_path.display());
+        return Err(StatusCode::FORBIDDEN);
+    }
+    
+    match tokio::fs::read_to_string(&log_path).await {
+        Ok(contents) => {
+            Ok((
+                [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                contents
+            ).into_response())
+        }
+        Err(e) => {
+            eprintln!("Failed to read log file {}: {}", log_path.display(), e);
             Err(StatusCode::NOT_FOUND)
         }
     }
@@ -447,7 +517,9 @@ async fn run_visual_test_background(
 
     // Build the command arguments
     let mut cmd = tokio::process::Command::new(&current_exe);
-    cmd.arg("visual-test")
+    cmd.arg("--config")
+        .arg("config.toml")
+        .arg("visual-test")
         .arg("--sem-image")
         .arg(&image_path)
         .arg("--output")

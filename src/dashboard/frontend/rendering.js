@@ -75,6 +75,11 @@ function renderTestCases() {
 function showImageDisplay() {
     if (!selectedTest) return;
 
+    // Debug: print the selected test data
+    console.log('Selected test data:', selectedTest);
+    console.log('Has log_file_path:', !!selectedTest.log_file_path);
+    console.log('log_file_path value:', selectedTest.log_file_path);
+
     const imageResults = document.getElementById('imageResults');
     
     imageResults.innerHTML = `
@@ -109,7 +114,12 @@ function showImageDisplay() {
             <!-- Row 2: Metrics Data -->
             <div class="metrics-row">
                 <div class="metrics-panel">
-                    <h4 style="margin-bottom: var(--spacing-sm); color: var(--text-primary);">Performance Metrics</h4>
+                    <div class="metrics-header">
+                        <h4 style="margin-bottom: var(--spacing-sm); color: var(--text-primary);">Performance Metrics</h4>
+                        <button class="log-icon-btn" onclick="openLogViewer('${selectedTest.session_id || 'unknown'}', '${selectedTest.test_id}')" title="View Algorithm Logs">
+                            📋
+                        </button>
+                    </div>
                     <div class="metrics-grid">
                         <div class="metric-item">
                             <span class="metric-label">Algorithm</span>

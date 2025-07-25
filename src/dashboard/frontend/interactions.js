@@ -354,3 +354,98 @@ async function pollTestProgress(testId, progressFill, progressText) {
         }, 1000); // Poll every second
     });
 }
+
+// Log viewer functionality
+function openLogViewer(sessionId, testId) {
+    // Create and show modal for log viewing
+    createLogModal(sessionId, testId);
+}
+
+async function createLogModal(sessionId, testId) {
+    // Create modal overlay
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'log-modal-overlay';
+    modalOverlay.onclick = (e) => {
+        if (e.target === modalOverlay) {
+            closeLogModal();
+        }
+    };
+    
+    // Create modal content
+    const modalContent = document.createElement('div');
+    modalContent.className = 'log-modal-content';
+    
+    modalContent.innerHTML = `
+        <div class="log-modal-header">
+            <h3>Algorithm Execution Log</h3>
+            <button class="close-btn" onclick="closeLogModal()">×</button>
+        </div>
+        <div class="log-modal-body">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Loading algorithm logs...</p>
+            </div>
+        </div>
+    `;
+    
+    modalOverlay.appendChild(modalContent);
+    document.body.appendChild(modalOverlay);
+    
+    // Load log content
+    try {
+        const response = await fetch(`/api/test-logs/${sessionId}/${testId}`);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to load logs: ${response.status}`);
+        }
+        
+        const logContent = await response.text();
+        
+        // Update modal with log content
+        const modalBody = modalContent.querySelector('.log-modal-body');
+        modalBody.innerHTML = `
+            <div class="log-content">
+                <pre>${logContent}</pre>
+            </div>
+            <div class="log-actions">
+                <button class="btn btn-secondary" onclick="copyLogToClipboard()">
+                    📋 Copy to Clipboard
+                </button>
+            </div>
+        `;
+        
+    } catch (error) {
+        console.error('Failed to load log:', error);
+        const modalBody = modalContent.querySelector('.log-modal-body');
+        modalBody.innerHTML = `
+            <div class="error-message">
+                <p>Failed to load algorithm logs: ${error.message}</p>
+                <button class="btn btn-secondary" onclick="closeLogModal()">Close</button>
+            </div>
+        `;
+    }
+}
+
+function closeLogModal() {
+    const modal = document.querySelector('.log-modal-overlay');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+function copyLogToClipboard() {
+    const logContent = document.querySelector('.log-content pre');
+    if (logContent) {
+        navigator.clipboard.writeText(logContent.textContent).then(() => {
+            // Show brief success message
+            const button = event.target;
+            const originalText = button.textContent;
+            button.textContent = '✓ Copied!';
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy to clipboard:', err);
+        });
+    }
+}

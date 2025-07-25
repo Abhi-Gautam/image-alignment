@@ -144,7 +144,8 @@ impl LoggingConfig {
         // Validate log directory if specified
         if let Some(ref log_dir) = self.log_directory {
             if let Some(parent) = log_dir.parent() {
-                if !parent.exists() {
+                // Only check if parent is not empty (relative paths like "logs" have empty parent)
+                if !parent.as_os_str().is_empty() && !parent.exists() {
                     return Err(format!("Log directory parent does not exist: {:?}", parent));
                 }
             }
