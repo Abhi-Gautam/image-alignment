@@ -51,22 +51,40 @@
             </div>
             <div class="filter-grid" style="display: none;">
                 <div class="filter-group">
-                    <label for="algorithmFilter">Algorithm</label>
-                    <select id="algorithmFilter">
-                        <option value="">All Algorithms</option>
-                    </select>
+                    <label>Algorithm</label>
+                    <div class="multi-select-dropdown">
+                        <div class="multi-select-toggle" onclick="toggleDropdown('filterAlgorithms')">
+                            <span id="filterAlgorithmsText">All algorithms...</span>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        <div class="multi-select-options" id="filterAlgorithmsDropdown" style="display: none;">
+                            <!-- Options will be populated dynamically -->
+                        </div>
+                    </div>
                 </div>
                 <div class="filter-group">
-                    <label for="patchSizeFilter">Patch Size</label>
-                    <select id="patchSizeFilter">
-                        <option value="">All Sizes</option>
-                    </select>
+                    <label>Patch Size</label>
+                    <div class="multi-select-dropdown">
+                        <div class="multi-select-toggle" onclick="toggleDropdown('filterPatchSizes')">
+                            <span id="filterPatchSizesText">All sizes...</span>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        <div class="multi-select-options" id="filterPatchSizesDropdown" style="display: none;">
+                            <!-- Options will be populated dynamically -->
+                        </div>
+                    </div>
                 </div>
                 <div class="filter-group">
-                    <label for="transformationFilter">Transformation</label>
-                    <select id="transformationFilter">
-                        <option value="">All Transformations</option>
-                    </select>
+                    <label>Transformation</label>
+                    <div class="multi-select-dropdown">
+                        <div class="multi-select-toggle" onclick="toggleDropdown('filterTransformations')">
+                            <span id="filterTransformationsText">All transformations...</span>
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        <div class="multi-select-options" id="filterTransformationsDropdown" style="display: none;">
+                            <!-- Options will be populated dynamically -->
+                        </div>
+                    </div>
                 </div>
                 <div class="filter-group checkbox-group">
                     <label for="successOnlyFilter">
@@ -135,7 +153,6 @@
                                     <label><input type="checkbox" value="gaussian_blur" onchange="updateMultiSelect('scenarios')"> Gaussian Blur</label>
                                     <label><input type="checkbox" value="brightness_change" onchange="updateMultiSelect('scenarios')"> Brightness Change</label>
                                     <label><input type="checkbox" value="scale_120" onchange="updateMultiSelect('scenarios')"> Scale 120%</label>
-                                    <label><input type="checkbox" value="combined_complex" onchange="updateMultiSelect('scenarios')"> Combined Complex</label>
                                 </div>
                             </div>
                         </div>
