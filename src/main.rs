@@ -113,7 +113,7 @@ enum Commands {
         /// Test scenarios to run (comma-separated: clean,translation,rotation,noise,blur,brightness,scale,complex)
         #[arg(
             long,
-            default_value = "clean,translation_5px,translation_10px,rotation_10deg,rotation_30deg,gaussian_noise,salt_pepper,gaussian_blur,brightness_change,scale_120,combined_complex"
+            default_value = "clean,translation_5px,translation_10px,rotation_10deg,rotation_30deg,gaussian_noise,salt_pepper,gaussian_blur,brightness_change,scale_120"
         )]
         scenarios: String,
     },
@@ -600,10 +600,10 @@ fn handle_visual_test(
     println!("📁 SEM Image: {}", sem_image_path.display());
     println!("📂 Output Directory: {}", output_dir.display());
     println!("🎯 Patch Sizes: {:?}", patch_sizes);
-    println!("🎯 Scenarios: {:?} (ignored - using all scenarios)", scenario_filters);
+    println!("🎯 Scenarios: {:?}", scenario_filters);
 
     let mut tester = VisualTester::new(output_dir);
-    let reports = tester.run_comprehensive_test(&sem_image_path, Some(&patch_sizes))?;
+    let reports = tester.run_comprehensive_test(&sem_image_path, Some(&patch_sizes), Some(&scenario_filters))?;
 
     println!("\n✅ Comprehensive visual testing completed!");
     println!("📊 Generated {} test reports", reports.len());

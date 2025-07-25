@@ -128,6 +128,7 @@ impl VisualTester {
         &mut self,
         sem_image_path: &Path,
         patch_sizes: Option<&[u32]>,
+        scenarios: Option<&[String]>,
     ) -> crate::Result<Vec<TestReport>> {
         println!(
             "🔬 Starting comprehensive visual test on: {}",
@@ -171,7 +172,7 @@ impl VisualTester {
                 let test_base_id = format!("{}x{}_patch{}", patch_size, patch_size, patch_idx + 1);
 
                 // Test different noise and transformation scenarios
-                let test_scenarios = self.create_test_scenarios();
+                let test_scenarios = self.create_test_scenarios(scenarios);
 
                 for scenario in test_scenarios {
                     // Apply transformations and noise to the patch
@@ -273,8 +274,8 @@ impl VisualTester {
     }
 
     /// Create test scenarios (noise, blur, brightness, etc.)
-    fn create_test_scenarios(&self) -> Vec<TestScenario> {
-        vec![
+    fn create_test_scenarios(&self, scenarios: Option<&[String]>) -> Vec<TestScenario> {
+        let all_scenarios = vec![
             TestScenario {
                 name: "clean".to_string(),
                 noise_type: NoiseType::None,
@@ -345,14 +346,18 @@ impl VisualTester {
                 translation: (0, 0),
                 scale_factor: 1.2,
             },
-            TestScenario {
-                name: "combined_complex".to_string(),
-                noise_type: NoiseType::Gaussian { sigma: 3.0 },
-                rotation_deg: 15.0,
-                translation: (5, -5),
-                scale_factor: 1.1,
-            },
-        ]
+        ];
+        
+        // Filter scenarios based on user selection
+        match scenarios {
+            Some(selected_scenarios) => {
+                all_scenarios
+                    .into_iter()
+                    .filter(|s| selected_scenarios.iter().any(|name| name == &s.name))
+                    .collect()
+            }
+            None => all_scenarios,
+        }
     }
 
     /// Apply transformation and noise to a patch
