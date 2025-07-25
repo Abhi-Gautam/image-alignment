@@ -6,7 +6,7 @@ use opencv::imgproc;
 use opencv::prelude::*;
 use std::collections::HashMap;
 use std::time::Instant;
-use tracing::{info, debug, warn, error};
+use tracing::{info, debug, error};
 
 /// OpenCV-based template matching algorithms
 /// Uses real OpenCV's matchTemplate functionality

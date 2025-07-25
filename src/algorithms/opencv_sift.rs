@@ -9,7 +9,7 @@ use opencv::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::Instant;
-use tracing::{info, debug, warn, error};
+use tracing::{info, debug, warn};
 
 /// SIFT (Scale-Invariant Feature Transform) feature detector and matcher
 /// SIFT is highly robust to scale, rotation, and illumination changes

@@ -1,12 +1,12 @@
 use crate::algorithms::*;
 use crate::config::Config;
-use crate::logging::{TestSessionSpan, new_correlation_id, set_correlation_id, get_correlation_id};
+use crate::logging::{TestSessionSpan, new_correlation_id, set_correlation_id};
 use crate::pipeline::{AlignmentAlgorithm, AlignmentResult};
 use crate::utils::image_conversion::grayimage_to_mat;
 use image::{imageops, GrayImage, Luma, Rgb, RgbImage};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use tracing::{info, debug, warn, error};
+use tracing::{info, debug, warn};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -11,8 +11,10 @@ use uuid::Uuid;
 pub struct AlgorithmSpan {
     span: Span,
     start_time: Instant,
+    #[allow(dead_code)]
     algorithm_name: String,
     patch_location: Option<(u32, u32)>,
+    #[allow(dead_code)]
     patch_size: Option<(u32, u32)>,
 }
 
@@ -210,6 +212,7 @@ impl AlgorithmSpan {
 pub struct PipelineSpan {
     span: Span,
     start_time: Instant,
+    #[allow(dead_code)]
     stage_name: String,
 }
 
@@ -286,6 +289,7 @@ pub struct TestSessionSpan {
     span: Span,
     start_time: Instant,
     session_id: Uuid,
+    #[allow(dead_code)]
     test_type: String,
 }
 

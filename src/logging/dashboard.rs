@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
-use tracing::{info, warn};
+use tracing::warn;
 use uuid::Uuid;
 
 /// Log entry for dashboard display

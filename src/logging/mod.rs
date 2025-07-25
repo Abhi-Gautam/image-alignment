@@ -11,8 +11,6 @@ pub mod dashboard;
 pub mod rotation;
 
 use anyhow::Result;
-use std::path::Path;
-use tracing::Level;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 use uuid::Uuid;
 
@@ -20,7 +18,6 @@ pub use config::LoggingConfig;
 pub use spans::{AlgorithmSpan, PipelineSpan, TestSessionSpan};
 pub use metrics::{MetricsCollector, PerformanceStats, PerformanceMeasurement};
 
-/// Global correlation ID for tracking related operations
 thread_local! {
     static CORRELATION_ID: std::cell::RefCell<Option<Uuid>> = std::cell::RefCell::new(None);
 }
@@ -34,7 +31,6 @@ pub struct PatchContext {
     pub variance: f32,
 }
 
-/// Global patch context for tracking patch extraction information
 thread_local! {
     static PATCH_CONTEXT: std::cell::RefCell<Option<PatchContext>> = std::cell::RefCell::new(None);
 }

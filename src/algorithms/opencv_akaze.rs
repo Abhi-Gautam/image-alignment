@@ -9,7 +9,7 @@ use opencv::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::Instant;
-use tracing::{info, debug, warn, error};
+use tracing::{info, debug, warn};
 
 /// AKAZE (Accelerated-KAZE) feature detector and matcher
 /// AKAZE is robust to rotation and scale changes, making it ideal for alignment tasks

@@ -327,7 +327,6 @@ impl Timer {
     }
 }
 
-/// Global metrics collector instance
 lazy_static::lazy_static! {
     static ref GLOBAL_METRICS: MetricsCollector = MetricsCollector::new(true);
 }
