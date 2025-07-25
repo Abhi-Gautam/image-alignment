@@ -3,10 +3,12 @@ let dashboardData = null;
 let filteredData = null;
 let selectedSession = null;
 let selectedTest = null;
+
+// Multi-select filter states
+let selectedFilterAlgorithms = [];
+let selectedFilterPatchSizes = [];
+let selectedFilterTransformations = [];
 let currentFilters = {
-    algorithm: '',
-    patchSize: '',
-    transformation: '',
     successOnly: false
 };
 
@@ -37,26 +39,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function setupEventListeners() {
-    // Store filter values before they change
-    const algorithmFilter = document.getElementById('algorithmFilter');
-    const patchSizeFilter = document.getElementById('patchSizeFilter');
-    const transformationFilter = document.getElementById('transformationFilter');
     const successOnlyFilter = document.getElementById('successOnlyFilter');
-
-    algorithmFilter.addEventListener('change', (e) => {
-        currentFilters.algorithm = e.target.value;
-        applyFilters();
-    });
-
-    patchSizeFilter.addEventListener('change', (e) => {
-        currentFilters.patchSize = e.target.value;
-        applyFilters();
-    });
-
-    transformationFilter.addEventListener('change', (e) => {
-        currentFilters.transformation = e.target.value;
-        applyFilters();
-    });
 
     successOnlyFilter.addEventListener('change', (e) => {
         currentFilters.successOnly = e.target.checked;
@@ -160,9 +143,6 @@ function updateDashboard() {
     populateFilterOptions();
     
     // Restore filter values
-    document.getElementById('algorithmFilter').value = currentFilters.algorithm;
-    document.getElementById('patchSizeFilter').value = currentFilters.patchSize;
-    document.getElementById('transformationFilter').value = currentFilters.transformation;
     document.getElementById('successOnlyFilter').checked = currentFilters.successOnly;
     
     // Render sessions
@@ -173,34 +153,47 @@ function updateDashboard() {
 function populateFilterOptions() {
     if (!dashboardData) return;
 
-    const algorithmSelect = document.getElementById('algorithmFilter');
-    const patchSizeSelect = document.getElementById('patchSizeFilter');
-    const transformationSelect = document.getElementById('transformationFilter');
+    const algorithmDropdown = document.getElementById('filterAlgorithmsDropdown');
+    const patchSizeDropdown = document.getElementById('filterPatchSizesDropdown');
+    const transformationDropdown = document.getElementById('filterTransformationsDropdown');
+    // Clear existing checkboxes
+    algorithmDropdown.innerHTML = '';
+    patchSizeDropdown.innerHTML = '';
+    transformationDropdown.innerHTML = '';
 
-    // Clear existing options except the first one
-    algorithmSelect.innerHTML = '<option value="">All Algorithms</option>';
-    patchSizeSelect.innerHTML = '<option value="">All Sizes</option>';
-    transformationSelect.innerHTML = '<option value="">All Transformations</option>';
-
-    // Add options from original data (not filtered data)
+    // Add algorithm checkboxes
     dashboardData.algorithms.forEach(algorithm => {
-        const option = document.createElement('option');
-        option.value = algorithm;
-        option.textContent = algorithm;
-        algorithmSelect.appendChild(option);
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = algorithm;
+        checkbox.onchange = () => updateMultiSelect('filterAlgorithms');
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(' ' + algorithm));
+        algorithmDropdown.appendChild(label);
     });
 
+    // Add patch size checkboxes
     dashboardData.patch_sizes.forEach(size => {
-        const option = document.createElement('option');
-        option.value = size;
-        option.textContent = size;
-        patchSizeSelect.appendChild(option);
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = size;
+        checkbox.onchange = () => updateMultiSelect('filterPatchSizes');
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(' ' + size));
+        patchSizeDropdown.appendChild(label);
     });
 
+    // Add transformation checkboxes
     dashboardData.transformations.forEach(transformation => {
-        const option = document.createElement('option');
-        option.value = transformation;
-        option.textContent = transformation.replace(/_/g, ' ');
-        transformationSelect.appendChild(option);
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = transformation;
+        checkbox.onchange = () => updateMultiSelect('filterTransformations');
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(' ' + transformation.replace(/_/g, ' ')));
+        transformationDropdown.appendChild(label);
     });
 }

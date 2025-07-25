@@ -37,9 +37,17 @@ function selectTest(testId) {
 
 async function applyFilters() {
     const params = new URLSearchParams();
-    if (currentFilters.algorithm) params.append('algorithm', currentFilters.algorithm);
-    if (currentFilters.patchSize) params.append('patch_size', currentFilters.patchSize);
-    if (currentFilters.transformation) params.append('transformation', currentFilters.transformation);
+    
+    // Add multi-select filter values
+    if (selectedFilterAlgorithms.length > 0) {
+        params.append('algorithms', selectedFilterAlgorithms.join(','));
+    }
+    if (selectedFilterPatchSizes.length > 0) {
+        params.append('patch_sizes', selectedFilterPatchSizes.join(','));
+    }
+    if (selectedFilterTransformations.length > 0) {
+        params.append('transformations', selectedFilterTransformations.join(','));
+    }
     if (currentFilters.successOnly) params.append('success_only', 'true');
 
     try {
@@ -71,6 +79,7 @@ async function applyFilters() {
         if (selectedSession) {
             renderTestCases();
         }
+        updateFilterStatus();
     } catch (error) {
         console.error('Error applying filters:', error);
         showToast('Failed to apply filters', 'error');
@@ -78,9 +87,9 @@ async function applyFilters() {
 }
 
 function updateFilterStatus() {
-    const hasActiveFilters = currentFilters.algorithm || 
-                           currentFilters.patchSize || 
-                           currentFilters.transformation || 
+    const hasActiveFilters = selectedFilterAlgorithms.length > 0 || 
+                           selectedFilterPatchSizes.length > 0 || 
+                           selectedFilterTransformations.length > 0 || 
                            currentFilters.successOnly;
     
     const filterStatus = document.getElementById('filterStatus');
@@ -89,16 +98,23 @@ function updateFilterStatus() {
 
 function clearFilters() {
     currentFilters = {
-        algorithm: '',
-        patchSize: '',
-        transformation: '',
         successOnly: false
     };
     
-    document.getElementById('algorithmFilter').value = '';
-    document.getElementById('patchSizeFilter').value = '';
-    document.getElementById('transformationFilter').value = '';
+    selectedFilterAlgorithms = [];
+    selectedFilterPatchSizes = [];
+    selectedFilterTransformations = [];
+    
+    // Clear all checkboxes in filter dropdowns
+    document.querySelectorAll('#filterAlgorithmsDropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.querySelectorAll('#filterPatchSizesDropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.querySelectorAll('#filterTransformationsDropdown input[type="checkbox"]').forEach(cb => cb.checked = false);
     document.getElementById('successOnlyFilter').checked = false;
+    
+    // Update display text
+    updateMultiSelect('filterAlgorithms');
+    updateMultiSelect('filterPatchSizes');
+    updateMultiSelect('filterTransformations');
     
     applyFilters();
 }
@@ -167,14 +183,44 @@ function updateMultiSelect(type) {
     const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]:checked');
     const textElement = document.getElementById(type + 'Text');
     
+    let defaultText = '';
+    let selectedValues = [];
+    
+    // Determine default text and update appropriate array
+    switch(type) {
+        case 'patchSizes':
+            defaultText = 'Select patch sizes...';
+            break;
+        case 'scenarios':
+            defaultText = 'Select scenarios...';
+            break;
+        case 'filterAlgorithms':
+            defaultText = 'All algorithms...';
+            selectedFilterAlgorithms = Array.from(checkboxes).map(cb => cb.value);
+            break;
+        case 'filterPatchSizes':
+            defaultText = 'All sizes...';
+            selectedFilterPatchSizes = Array.from(checkboxes).map(cb => cb.value);
+            break;
+        case 'filterTransformations':
+            defaultText = 'All transformations...';
+            selectedFilterTransformations = Array.from(checkboxes).map(cb => cb.value);
+            break;
+    }
+    
     if (checkboxes.length === 0) {
-        textElement.textContent = 'Select ' + (type === 'patchSizes' ? 'patch sizes' : 'scenarios') + '...';
+        textElement.textContent = defaultText;
     } else {
         const values = Array.from(checkboxes).map(cb => {
             const label = cb.parentElement.textContent.trim();
             return label;
         });
         textElement.textContent = values.join(', ');
+    }
+    
+    // Apply filters if it's a filter dropdown
+    if (type.startsWith('filter')) {
+        applyFilters();
     }
 }
 
