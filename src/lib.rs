@@ -1,12 +1,17 @@
 pub mod algorithms;
-pub mod data;
 pub mod analysis;
-pub mod visualization;
+pub mod augmentation;
+pub mod config;
 pub mod dashboard;
+pub mod data;
+pub mod logging;
+pub mod pipeline;
+pub mod utils;
+pub mod visualization;
 
 pub use algorithms::*;
-pub use data::*;
 pub use analysis::*;
+pub use data::*;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlignmentResult {
@@ -33,7 +38,3 @@ impl AlignmentResult {
 
 pub type Result<T> = anyhow::Result<T>;
 
-#[cfg(test)]
-mod tests {
-    // No unit tests in lib.rs - all tests are in tests/ directory
-}

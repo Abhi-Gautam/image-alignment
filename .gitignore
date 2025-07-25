@@ -36,6 +36,7 @@ pids
 /output/
 /tmp/
 /temp/
+/logs/
 
 # Datasets (too large for git)
 /datasets/
