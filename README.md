@@ -1,287 +1,334 @@
 # Image Alignment System
 
-Real-time unsupervised image alignment for semiconductor wafer inspection.
+High-performance image alignment system for semiconductor wafer inspection using OpenCV-based algorithms and real-time processing capabilities.
 
 ## Overview
 
-A high-performance Rust-based image alignment system designed for semiconductor wafer inspection. Aligns small template images (patches) to larger SEM images with sub-pixel accuracy and real-time performance (<50ms processing time).
+A production-ready Rust-based image alignment system designed for semiconductor wafer inspection. The system provides sub-pixel accuracy alignment of template images to larger SEM images with comprehensive performance analysis and logging capabilities.
 
 ### Key Features
 
-- Real-time performance: Sub-50ms processing for critical inspection workflows
-- Sub-pixel accuracy: Precise alignment for semiconductor quality control
-- Multiple algorithms: ORB template matching and FFT-based phase correlation
-- Performance analysis: Built-in benchmarking and accuracy measurement
-- Production ready: Comprehensive CLI with JSON output for integration
-- Test validation: Comprehensive testing framework with real wafer data
+- **Multiple OpenCV Algorithms**: SIFT, ORB, AKAZE, and Template Matching algorithms
+- **Real-time Performance**: Sub-50ms processing time for production workflows
+- **Sub-pixel Accuracy**: Precise alignment critical for semiconductor inspection
+- **Interactive Dashboard**: Web-based visualization and analysis interface
+- **Comprehensive Logging**: Per-test algorithm execution logs with ground truth analysis
+- **Configuration-Driven**: Fully configurable algorithm parameters via TOML
+- **Batch Processing**: Automated testing with multiple patch sizes and scenarios
 
 ## Quick Start
+
+### Prerequisites
+
+- Rust 1.70 or later
+- OpenCV 4.x installed on your system
+- pkg-config (for OpenCV linking)
 
 ### Installation
 
 ```bash
 # Clone repository
-git clone <repository-url>
+git clone https://github.com/Abhi-Gautam/image-alignment
 cd image-alignment
 
-# Build (release mode for performance)
+# Set up OpenCV environment
+./setup_opencv_env.sh
+
+# Build in release mode
 cargo build --release
 
-# Verify installation
-cargo run --release -- --help
+# Run tests to verify installation
+cargo test --release
 ```
 
 ### Basic Usage
 
 ```bash
-# Run alignment
-cargo run --release -- align \
-  --template template.png \
-  --target target.png \
-  --algorithm orb \
-  --output results/alignment.json
+# Run comprehensive visual tests
+cargo run --release -- visual-test \
+  --sem-image datasets/wafer_image.png \
+  --patch-sizes 64,128,192 \
+  --scenarios clean,rotation_10deg,gaussian_noise \
+  --output results/
 
-# Compare algorithms
-cargo run --release -- compare \
-  --template template.png \
-  --target target.png \
-  --algorithms orb,phase \
-  --output results/comparison.json
+# Launch interactive dashboard
+cargo run --release -- dashboard --port 8080
 
-# Test with known transformations
-cargo run --release -- test \
-  --source wafer_image.jpg \
-  --patch-size 64 \
-  --count 3 \
-  --output results/validation
+# Run with custom configuration
+cargo run --release -- --config config.toml visual-test \
+  --sem-image image.png \
+  --output results/
 ```
 
 ## Architecture
 
 ### Supported Algorithms
 
-| Algorithm | Best For | Speed | Accuracy | Size Flexibility |
-|-----------|----------|-------|----------|-----------------|
-| **ORB Template Matching** | Different image sizes | ~23ms | Sub-pixel | High |
-| **Phase Correlation** | Same-size images | ~10ms | Sub-pixel | Limited |
+| Algorithm | Method | Speed | Best Use Case | Key Features |
+|-----------|--------|-------|---------------|--------------|
+| **OpenCV-SIFT** | Feature-based | ~40ms | High accuracy needed | Scale/rotation invariant, patented algorithm |
+| **OpenCV-ORB** | Feature-based | ~25ms | Real-time applications | Free alternative to SIFT, good performance |
+| **OpenCV-AKAZE** | Feature-based | ~30ms | Balanced performance | Non-linear scale space, robust features |
+| **OpenCV-NCC** | Template matching | ~15ms | Clean images | Normalized cross-correlation |
+| **OpenCV-SSD** | Template matching | ~10ms | Speed critical | Sum of squared differences |
 
-### Performance Benchmarks
+### System Architecture
 
 ```
-Algorithm Performance (64x64 images, Release mode):
-┌─────────────────────┬──────────────┬─────────────────────┬──────────────┐
-│ Algorithm           │ Process Time │ Translation Error   │ Use Case     │
-├─────────────────────┼──────────────┼─────────────────────┼──────────────┤
-│ ORB (Template)      │ ~23ms        │ <0.1 pixel        │ Multi-scale  │
-│ Phase Correlation   │ ~10ms        │ <0.1 pixel        │ Same-size    │
-└─────────────────────┴──────────────┴─────────────────────┴──────────────┘
+┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
+│   CLI/Config    │────▶│   Pipeline   │────▶│   Algorithms    │
+└─────────────────┘     └──────────────┘     └─────────────────┘
+         │                      │                      │
+         ▼                      ▼                      ▼
+┌─────────────────┐     ┌──────────────┐     ┌─────────────────┐
+│   Dashboard     │     │   Logging    │     │  Visualization  │
+└─────────────────┘     └──────────────┘     └─────────────────┘
 ```
 
-## Command Reference
+## Configuration
 
-### Core Commands
+The system uses a TOML configuration file for all algorithm parameters. See `config.toml` for the default configuration.
 
-```bash
-# Single alignment
-cargo run --release -- align -t template.png -T target.png -a orb
-
-# Algorithm comparison  
-cargo run --release -- compare -t template.png -T target.png -a orb,phase
-
-# Accuracy testing with real data
-cargo run --release -- test -s wafer.jpg -p 64 -n 3 -o results/
-
-# Performance benchmarking
-cargo run --release -- benchmark --dataset validation/ --algorithms orb,phase --output benchmark.json
-```
-
-## Output Format
-
-```json
-{
-  "translation": [12.5, -8.2],
-  "rotation": 15.3,
-  "scale": 1.02,
-  "confidence": 0.85,
-  "processing_time_ms": 23.4,
-  "algorithm_used": "ORB"
-}
-```
-
-- **Translation**: (x, y) pixel offset
-- **Rotation**: Degrees (counterclockwise)
-- **Scale**: Magnification ratio
-- **Confidence**: Algorithm confidence (0.0-1.0)
-- **Processing Time**: Milliseconds
-
-## Testing and Validation
-
-### Test Coverage
-```bash
-# Run all tests
-cargo test
-
-# Integration tests with synthetic data
-cargo test --test integration_tests
-
-# Performance benchmarks
-./scripts/run_benchmarks.sh
-```
-
-### Current Test Results
-```
-running 7 tests
-test test_pattern_generation ... ok
-test test_metrics_calculation ... ok  
-test test_orb_alignment ... ok
-test test_image_validation ... ok
-test test_benchmark_runner ... ok
-test test_image_loading ... ok
-test test_phase_correlation_alignment ... ok
-
-test result: ok. 7 passed; 0 failed
-```
-
-## Requirements
-
-### System Requirements
-- **Rust**: 1.70 or later
-- **Memory**: 100MB+ available RAM
-- **Storage**: 50MB for dependencies + datasets
-- **OS**: Linux, macOS, Windows
-
-### Dependencies
 ```toml
-[dependencies]
-image = "0.25"          # Core image processing
-ndarray = "0.16"        # N-dimensional arrays
-rustfft = "6.2"         # Fast Fourier Transform
-num-complex = "0.4"     # Complex number arithmetic
-rayon = "1.10"          # Parallel processing
-clap = "4.5"           # Command-line interface
-anyhow = "1.0"         # Error handling
-serde = "1.0"          # JSON serialization
-instant = "0.1"        # High-precision timing
+# Example configuration snippet
+[algorithms.sift]
+n_features = 1000
+contrast_threshold = 0.04
+edge_threshold = 10.0
+sigma = 1.6
+
+[algorithms.orb]
+n_features = 1000
+scale_factor = 1.2
+n_levels = 8
+edge_threshold = 31
 ```
 
-## Use Cases
+## Dashboard Interface
 
-### Semiconductor Inspection
-- Wafer alignment: Align inspection templates to SEM images
-- Defect detection: Locate known defect patterns in wafer scans
-- Quality control: Automated alignment for measurement systems
-- Process monitoring: Track feature alignment over time
+The interactive dashboard provides:
 
-### General Applications
-- Medical imaging: Align tissue samples and reference images
-- Materials science: Compare crystal structures and patterns
-- Computer vision: Template matching for object detection
-- Research: Automated image analysis workflows
+- **Visual Results**: Side-by-side comparison of alignment results
+- **Performance Metrics**: Algorithm execution times and accuracy measurements
+- **Multi-Select Filters**: Filter results by algorithm, patch size, and test scenario
+- **Algorithm Logs**: Detailed per-test execution logs with ground truth analysis
+- **Session Management**: Track and compare multiple test sessions
 
-## Performance Optimization
+### Accessing the Dashboard
 
-### For Speed
 ```bash
-# Use phase correlation for same-sized images
-cargo run --release -- align -t template.png -T target.png -a phase
+# Start the dashboard server
+cargo run --release -- dashboard --port 8080
 
+# Open in browser
+http://localhost:8080
+```
+
+## Test Scenarios
+
+The system supports various test scenarios to evaluate algorithm robustness:
+
+| Scenario | Description | Parameters |
+|----------|-------------|------------|
+| `clean` | No transformation | Original patch |
+| `translation_5px` | Small translation | ±5 pixels |
+| `translation_10px` | Medium translation | ±10 pixels |
+| `rotation_10deg` | Small rotation | 10° rotation |
+| `rotation_30deg` | Large rotation | 30° rotation |
+| `gaussian_noise` | Additive noise | σ=5.0 |
+| `salt_pepper` | Impulse noise | density=0.005 |
+| `gaussian_blur` | Motion blur | σ=1.5 |
+| `brightness_change` | Illumination | ±20 intensity |
+| `scale_120` | Scale change | 1.2x scale |
+
+## Algorithm Execution Logs
+
+Each test generates detailed algorithm execution logs containing:
+
+```
+=== Ground Truth Information ===
+Original Patch Location: (256, 128)
+Original Patch Size: 64x64
+Patch Center: (288, 160)
+
+=== Test Scenario Details ===
+Noise Type: None
+Rotation: 10°
+Translation: (0, 0)
+Expected Location After Transform: (256, 128)
+
+=== Algorithm Results ===
+Detected Location: (258, 127)
+Confidence: 0.922
+Execution Time: 42.4ms
+
+=== Error Analysis ===
+Detection Error X: 2 pixels
+Detection Error Y: -1 pixels
+Total Translation Error: 2.24 pixels
+Success Threshold: <= 10 pixels
+Test Result: PASSED
+```
+
+## System Requirements
+
+### Hardware Requirements
+- **CPU**: Modern x86_64 or ARM64 processor
+- **Memory**: 2GB RAM minimum, 4GB recommended
+- **Storage**: 500MB for dependencies and build artifacts
+- **GPU**: Optional, not currently utilized
+
+### Software Requirements
+- **Rust**: 1.70 or later
+- **OpenCV**: 4.x with development headers
+- **pkg-config**: For library linking
+- **OS**: Linux, macOS, Windows (with OpenCV properly configured)
+
+### Key Dependencies
+- `opencv` - Computer vision algorithms
+- `image` - Image I/O and basic operations
+- `axum` - Web framework for dashboard
+- `tracing` - Structured logging framework
+- `serde` - Serialization for configuration and data
+- `clap` - Command-line interface
+
+## Production Deployment
+
+### Performance Optimization
+
+```bash
 # Build with native CPU optimizations
 RUSTFLAGS="-C target-cpu=native" cargo build --release
+
+# Run with optimized thread pool
+RAYON_NUM_THREADS=8 cargo run --release -- visual-test ...
 ```
 
-### For Accuracy
+### Monitoring and Logging
+
+The system provides comprehensive logging with different levels:
+
 ```bash
-# Use ORB for different image sizes
-cargo run --release -- align -t small_template.png -T large_target.png -a orb
+# Set logging level
+RUST_LOG=info cargo run --release -- dashboard
 
-# Larger templates generally improve accuracy
+# Enable debug logging for specific modules
+RUST_LOG=image_alignment::algorithms=debug cargo run --release ...
 ```
 
-### For Memory Efficiency
-```bash
-# Process in batches for large datasets
-# Monitor memory usage with: ps aux | grep image-alignment
-```
+### Integration
+
+The system can be integrated into existing workflows:
+
+1. **CLI Integration**: Use JSON output for scripting
+2. **REST API**: Dashboard server provides API endpoints
+3. **Library Usage**: Import as Rust crate for custom applications
+
+## API Endpoints
+
+The dashboard server provides REST API endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/data` | GET | Get filtered test results |
+| `/api/sessions` | GET | List all test sessions |
+| `/api/sessions/:id` | GET | Get specific session |
+| `/api/algorithms/summary` | GET | Algorithm performance summary |
+| `/api/run-visual-test` | POST | Execute visual test |
+| `/api/test-logs/:session/:test` | GET | Get algorithm execution log |
+| `/api/image/*path` | GET | Serve result images |
 
 ## Troubleshooting
 
-### Common Issues
+### OpenCV Installation Issues
 
-**Image format errors**:
 ```bash
-# Convert to PNG format
-convert image.tif image.png
+# Ubuntu/Debian
+sudo apt-get install libopencv-dev pkg-config
+
+# macOS
+brew install opencv pkg-config
+
+# Verify installation
+pkg-config --modversion opencv4
 ```
 
-**Poor alignment results**:
+### Build Issues
+
 ```bash
-# Compare algorithms to find best match
-cargo run --release -- compare -t template.png -T target.png -a orb,phase
+# Clear build cache
+cargo clean
+
+# Rebuild with verbose output
+cargo build --release --verbose
+
+# Check OpenCV linking
+pkg-config --libs opencv4
 ```
 
-**Performance issues**:
-```bash
-# Ensure release build
-cargo build --release
+### Performance Issues
 
-# Check image sizes are appropriate
-identify -ping *.png
+- Ensure release build is used
+- Check image sizes (larger images = slower processing)
+- Monitor CPU usage during execution
+- Consider reducing patch sizes or test scenarios
+
+## Project Structure
+
+```
+image-alignment/
+├── src/
+│   ├── algorithms/      # OpenCV algorithm implementations
+│   ├── config/          # Configuration management
+│   ├── dashboard/       # Web dashboard and API
+│   ├── logging/         # Structured logging system
+│   ├── pipeline/        # Processing pipeline framework
+│   ├── visualization/   # Visual testing and reporting
+│   └── main.rs          # CLI entry point
+├── config.toml          # Default configuration
+├── datasets/            # Test images and data
+└── results/             # Output directory
 ```
 
-### Debug Mode
+## Development
+
+### Running Tests
+
 ```bash
-# Enable debug logging
-RUST_LOG=debug cargo run --release -- align -t template.png -T target.png -a orb
+# Run all tests
+cargo test --release
+
+# Run specific test module
+cargo test --release algorithms
+
+# Run with output
+cargo test --release -- --nocapture
 ```
 
-## Project Status
+### Contributing
 
-### Implemented Features
-- Core alignment algorithms (ORB, Phase Correlation)
-- CLI interface with all subcommands
-- Patch extraction and transformation utilities
-- Performance measurement and comparison
-- JSON output format for integration
-- Comprehensive test suite (7 passing tests)
-- Validation testing with real wafer data
+Contributions are welcome. Please ensure:
 
-### Known Limitations
-- ORB algorithm requires debugging for rotation detection
-- Phase correlation does not detect rotations
-- OpenCV integration disabled due to system dependencies
+1. Code follows Rust idioms and conventions
+2. All tests pass before submitting PR
+3. New features include appropriate tests
+4. Documentation is updated as needed
 
-### Planned Features
-- Enhanced rotation detection algorithms
-- GPU acceleration for large datasets
-- Batch processing capabilities
-- Docker containerization
+### Building Documentation
+
+```bash
+# Generate and open documentation
+cargo doc --open
+
+# Include private items
+cargo doc --document-private-items
+```
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License - see LICENSE file for details.
 
-## Contributing
+## Contact
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/new-feature`)
-3. Commit changes (`git commit -m 'Add new feature'`)
-4. Push to branch (`git push origin feature/new-feature`)
-5. Open a Pull Request
-
-### Development Setup
-```bash
-# Install development dependencies
-cargo install cargo-watch
-
-# Run tests in watch mode
-cargo watch -x test
-
-# Run with debug logging
-RUST_LOG=debug cargo run --release -- align -t template.png -T target.png
-```
-
-## Support
-
-- Issues: Report bugs via GitHub Issues
-- Documentation: See inline code documentation
-- Questions: Use GitHub Discussions
+- Repository: https://github.com/Abhi-Gautam/image-alignment
+- Issues: https://github.com/Abhi-Gautam/image-alignment/issues
